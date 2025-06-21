@@ -1,4 +1,4 @@
-use gtk4::{prelude::*, Switch, ToggleButton};
+use gtk4::{prelude::*, Switch, Frame};
 use gtk4::{Application, ApplicationWindow, Box as GtkBox, Button, HeaderBar, Image, Label, Orientation, Stack};
 use gtk4::gdk::Display;
 use gtk4::CssProvider;
@@ -35,6 +35,79 @@ fn is_system_theme_light() -> bool {
         return prefer_output != "'prefer-dark'";
     }
     true  
+}
+
+fn set_monitors(boxxy: &GtkBox){
+    // Run hyprctl monitors all
+    let output = Command::new("hyprctl")
+        .arg("monitors")
+        .arg("all")
+        .output()
+        .expect("failed to execute hyprctl");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+
+    // Create fixed container to hold monitor widgets
+    let fixed = gtk4::Fixed::new();
+    let scale = 0.1; // scale down to 10% for visualization
+
+    // Parse each monitor block
+    for block in stdout.split("Monitor ").skip(1) {
+        let mut name = "";
+        let mut width = 0;
+        let mut height = 0;
+        let mut pos_x = 0;
+        let mut pos_y = 0;
+
+        let lines: Vec<_> = block.lines().collect();
+        if let Some(first_line) = lines.get(0) {
+            name = first_line.split_whitespace().next().unwrap_or("");
+        }
+
+        for line in lines {
+            if line.contains(" at ") {
+                // Example line: 1920x1080@144.00301 at 0x0
+                let parts: Vec<_> = line.trim().split(" at ").collect();
+                if parts.len() == 2 {
+                    let res = parts[0].split('@').next().unwrap_or("").trim();
+                    let pos = parts[1].trim();
+
+                    // Parse resolution
+                    let res_parts: Vec<_> = res.split('x').collect();
+                    if res_parts.len() == 2 {
+                        width = res_parts[0].parse().unwrap_or(0);
+                        height = res_parts[1].parse().unwrap_or(0);
+                    }
+
+                    // Parse position
+                    let pos_parts: Vec<_> = pos.split('x').collect();
+                    if pos_parts.len() == 2 {
+                        pos_x = pos_parts[0].parse().unwrap_or(0);
+                        pos_y = pos_parts[1].parse().unwrap_or(0);
+                    }
+                }
+            }
+        }
+
+        // Create a frame representing the monitor
+        let frame = Frame::builder()
+            .label(name)
+            .width_request((width as f64 * scale) as i32)
+            .height_request((height as f64 * scale) as i32)
+            .build();
+
+        let label = Label::new(Some(&format!("{width}x{height} @ {pos_x}x{pos_y}")));
+        frame.set_child(Some(&label));
+
+        // Add to fixed container at scaled position
+        fixed.put(
+            &frame,
+            pos_x as f64 * scale,
+            pos_y as f64 * scale,
+        );
+    }
+
+    // Add fixed container into the box you provided
+    boxxy.append(&fixed);
 }
 
 fn setup_switch(theme_switch: &Switch) {
@@ -539,6 +612,7 @@ fn build_ui(app: &Application) {
 
     // monitor
     let monitor_box = GtkBox::new(Orientation::Horizontal, 3);
+    set_monitors(&monitor_box);
 
     // switches
     let switch_box = gtk4::Grid::builder()
