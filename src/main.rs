@@ -55,6 +55,37 @@ fn setup_switch(theme_switch: &Switch) {
     });
 }
 
+fn is_notifications_sound() -> bool {
+    let output = Command::new("sh")
+        .arg("-c")
+        .arg("cynage -n")
+        .output();
+
+    if let Ok(output) = output {
+        let prefer_output = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        return prefer_output != "toggle-on";
+    }
+    true  
+}
+
+fn setup_sound_switch(switch: &Switch) {
+    let is_on = is_notifications_sound();
+    switch.set_active(is_on);
+
+    switch.connect_state_set(|_, state| {
+        let cmd = if state {
+            "cynagectl -n true"
+        } else {
+            "cynagectl -n false"
+        };
+
+        // Run the command
+        let _ = Command::new("sh").arg("-c").arg(cmd).spawn();
+        // Allow the state change
+        gtk4::glib::Propagation::Proceed
+    });
+}
+
 fn show_notification(notif_area: &GtkBox, text: &str) {
     let notif_box = GtkBox::builder()
         .orientation(Orientation::Horizontal)
@@ -509,12 +540,20 @@ fn build_ui(app: &Application) {
     // monitor
     let monitor_box = GtkBox::new(Orientation::Horizontal, 3);
 
-    // themeswitch 
-    let theme = GtkBox::new(Orientation::Horizontal, 10);
+    // switches
+    let switch_box = gtk4::Grid::builder()
+        .column_homogeneous(true)
+        .row_homogeneous(true)
+        .column_spacing(10)
+        .row_spacing(10)
+        .build();
 
+    // themeswitch 
     let theme_switch = gtk4::Switch::builder().build();
+    theme_switch.set_halign(gtk4::Align::Start);
     setup_switch(&theme_switch);
     let theme_switch_label = Label::new(Some("Dark / Light Theme switch"));
+    theme_switch_label.set_halign(gtk4::Align::Start);
 
     let output = Command::new("sh")
         .arg("-c")
@@ -527,11 +566,33 @@ fn build_ui(app: &Application) {
         }
     }
 
-    theme.append(&theme_switch_label);
-    theme.append(&theme_switch);
+
+    switch_box.attach(&theme_switch_label, 0, 0, 1, 1);
+    switch_box.attach(&theme_switch, 1, 0, 1, 1);
+
+    // notification sound
+    let notiv_sound_label = Label::new(Some("Notifications sound toggle switch"));
+    notiv_sound_label.set_halign(gtk4::Align::Start);
+    let notiv_sound_switch = gtk4::Switch::builder().build();
+    notiv_sound_switch.set_halign(gtk4::Align::Start);
+    setup_sound_switch(&notiv_sound_switch);
+
+    let output = Command::new("sh")
+        .arg("-c")
+        .arg("cynagectl -n")
+        .output();
+    if let Ok(output) = output {
+        let prefer_output = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        if prefer_output != "toggle-on" {
+            notiv_sound_switch.set_state(true);
+        }
+    }
+    
+    switch_box.attach(&notiv_sound_label, 0, 1, 1, 1);
+    switch_box.attach(&notiv_sound_switch, 1, 1, 1, 1);
 
     shell_settings_box.append(&monitor_box);
-    shell_settings_box.append(&theme);
+    shell_settings_box.append(&switch_box);
     stack.add_titled(&shell_settings_box, Some("cynide"), "Cynide Settings");
 
 
