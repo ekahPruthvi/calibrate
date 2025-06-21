@@ -1,4 +1,4 @@
-use gtk4::{prelude::*, ToggleButton};
+use gtk4::{prelude::*, Switch, ToggleButton};
 use gtk4::{Application, ApplicationWindow, Box as GtkBox, Button, HeaderBar, Image, Label, Orientation, Stack};
 use gtk4::gdk::Display;
 use gtk4::CssProvider;
@@ -21,6 +21,37 @@ fn typing_effect(label: &Label, text: &str, delay_ms: u64) {
         } else {
             glib::ControlFlow::Break
         }
+    });
+}
+
+fn is_system_theme_light() -> bool {
+    let output = Command::new("sh")
+        .arg("-c")
+        .arg("gsettings get org.gnome.desktop.interface color-scheme")
+        .output();
+
+    if let Ok(output) = output {
+        let prefer_output = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        return prefer_output != "'prefer-dark'";
+    }
+    true  
+}
+
+fn setup_switch(theme_switch: &Switch) {
+    let is_light = is_system_theme_light();
+    theme_switch.set_active(is_light);
+
+    theme_switch.connect_state_set(|_, state| {
+        let cmd = if state {
+            "cynagectl -s light"
+        } else {
+            "cynagectl -s dark"
+        };
+
+        // Run the command
+        let _ = Command::new("sh").arg("-c").arg(cmd).spawn();
+        // Allow the state change
+        gtk4::glib::Propagation::Proceed
     });
 }
 
@@ -199,6 +230,33 @@ fn load_css() {
             all: unset;
             padding: 0px;
             margin: 0;
+        }
+
+        switch {
+            background-color: rgba(255, 255, 255, 0.1);
+            border-radius: 20px;
+            border: 1px solid rgba(255, 255, 255, 0.4);
+            min-width: 60px;
+            min-height: 30px;
+            padding: 3px;
+            transition: background-color 0.3s ease;
+        }
+
+        switch:checked {
+            background-color: rgba(100, 200, 250, 0.5);
+            border: 1px solid rgba(255, 255, 255, 0.6);
+        }
+
+        switch slider {
+            background-color: white;
+            border-radius: 50%;
+            min-width: 24px;
+            min-height: 24px;
+            transition: transform 0.3s ease, background-color 0.3s ease;
+        }
+
+        switch:checked slider {
+            background-color: #fff;
         }
 
 
@@ -424,23 +482,17 @@ fn build_ui(app: &Application) {
                         current_pic_clone.borrow_mut().set_paintable(Some(&texture));
                     }
                     let now = is_image_dark(&target_path);
-                    let output = Command::new("sh")
-                        .arg("-c")
-                        .arg("gsettings get org.gnome.desktop.interface color-scheme")
-                        .output();
-                    if let Ok(output) = output {
-                        let prefer_output = String::from_utf8_lossy(&output.stdout).trim().to_string();
-                        if now && prefer_output != "'prefer-dark'" {
-                            show_notification(&notiv_clone_for_wall, "wallpaper changed, dark wallpaper detected");
-                            let _ = Command::new("cynagectl").arg("-s").arg("dark").spawn();
-                        } else if now && prefer_output == "'prefer-dark'" {
-                            show_notification(&notiv_clone_for_wall, "wallpaper changed");
-                        } else if !now && prefer_output == "'prefer-dark'" {
-                            show_notification(&notiv_clone_for_wall, "wallpaper changed, Light wallpaper detected");
-                            let _ = Command::new("cynagectl").arg("-s").arg("light").spawn();
-                        } else {
-                            show_notification(&notiv_clone_for_wall, "wallpaper changed");
-                        }
+                    let prefer_output = is_system_theme_light();
+                    if now && prefer_output {
+                        show_notification(&notiv_clone_for_wall, "wallpaper changed, dark wallpaper detected");
+                        let _ = Command::new("cynagectl").arg("-s").arg("dark").spawn();
+                    } else if now && !prefer_output {
+                        show_notification(&notiv_clone_for_wall, "wallpaper changed");
+                    } else if !now && !prefer_output {
+                        show_notification(&notiv_clone_for_wall, "wallpaper changed, Light wallpaper detected");
+                        let _ = Command::new("cynagectl").arg("-s").arg("light").spawn();
+                    } else {
+                        show_notification(&notiv_clone_for_wall, "wallpaper changed");
                     }
                 });
                 image_grid.append(&btn);
@@ -454,12 +506,32 @@ fn build_ui(app: &Application) {
     
     let shell_settings_box = GtkBox::new(Orientation::Vertical, 2);
 
+    // monitor
     let monitor_box = GtkBox::new(Orientation::Horizontal, 3);
 
-    let theme_toggle = ToggleButton::new();
+    // themeswitch 
+    let theme = GtkBox::new(Orientation::Horizontal, 10);
+
+    let theme_switch = gtk4::Switch::builder().build();
+    setup_switch(&theme_switch);
+    let theme_switch_label = Label::new(Some("Dark / Light Theme switch"));
+
+    let output = Command::new("sh")
+        .arg("-c")
+        .arg("gsettings get org.gnome.desktop.interface color-scheme")
+        .output();
+    if let Ok(output) = output {
+        let prefer_output = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        if prefer_output != "'prefer-dark'" {
+            theme_switch.set_state(true);
+        }
+    }
+
+    theme.append(&theme_switch_label);
+    theme.append(&theme_switch);
 
     shell_settings_box.append(&monitor_box);
-    shell_settings_box.append(&theme_toggle);
+    shell_settings_box.append(&theme);
     stack.add_titled(&shell_settings_box, Some("cynide"), "Cynide Settings");
 
 
