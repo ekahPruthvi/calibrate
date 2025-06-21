@@ -1,8 +1,8 @@
-use gtk4::prelude::*;
+use gtk4::{prelude::*, ToggleButton};
 use gtk4::{Application, ApplicationWindow, Box as GtkBox, Button, HeaderBar, Image, Label, Orientation, Stack};
 use gtk4::gdk::Display;
 use gtk4::CssProvider;
-use std::{cell::RefCell, fs, path::{Path, PathBuf}, process::Command, rc::Rc};
+use std::{cell::RefCell, fs, path::PathBuf, process::Command, rc::Rc};
 use gtk4::glib;
 
 fn typing_effect(label: &Label, text: &str, delay_ms: u64) {
@@ -454,6 +454,12 @@ fn build_ui(app: &Application) {
     
     let shell_settings_box = GtkBox::new(Orientation::Vertical, 2);
 
+    let monitor_box = GtkBox::new(Orientation::Horizontal, 3);
+
+    let theme_toggle = ToggleButton::new();
+
+    shell_settings_box.append(&monitor_box);
+    shell_settings_box.append(&theme_toggle);
     stack.add_titled(&shell_settings_box, Some("cynide"), "Cynide Settings");
 
 
