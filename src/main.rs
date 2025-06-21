@@ -59,6 +59,21 @@ fn load_css() {
             background-color: rgba(255, 255, 255, 0.2);
         }
 
+        button.walls {
+            all: unset;
+            padding: 1px;
+            background-color: rgba(0, 0, 0, 0.18);
+            box-shadow: 0 0 0 0px rgba(0, 0, 0, 0);
+            transition: background-color 1s, box-shadow  ease-in-out 1s ;
+
+        }   
+
+        button.walls:hover {
+            background-color: rgba(59, 59, 59, 0.31);
+            box-shadow: 0 0 20px 1px rgba(0, 0, 0, 0.63);
+
+        }
+
         box {
             padding: 20px;
         }
@@ -81,6 +96,46 @@ fn load_css() {
             font-weight: 700;
             font-size: 80px; 
         }
+
+        .wall_s {
+            padding: 10px;
+        }
+
+        .wall_s scrollbar {
+            background-color: transparent;
+            border: none;
+            padding: 4px;
+        }
+
+        .wall_s scrollbar slider {
+            background-color: rgba(255, 255, 255, 0.7);
+            border-radius: 10px;
+            min-width: 4px;
+            min-height: 30px;
+            transition: background-color 0.3s ease;
+        }
+
+        .wall_s scrollbar slider:hover {
+            background-color: rgba(255, 255, 255, 1.0);
+        }
+
+        .wall_s scrollbar trough {
+            background-color: transparent;
+            border-radius: 10px;
+        }
+
+        #current_wall {
+            background-color: rgba(255, 255, 255, 0.09);
+            padding: 5px;
+            margin: 0;
+        }
+
+        .current_img {
+            all: unset;
+            padding: 0px;
+            margin: 0;
+        }
+
 
     "#;
 
@@ -111,9 +166,71 @@ fn build_ui(app: &Application) {
     stack.add_titled(&Label::new(Some("Home Page")), Some("home"), "Home");
 
     // Wallpaper page ---------------------------------------------------------------------------------------------------------------------------------- //
-    let wallpaper_box = GtkBox::builder().orientation(Orientation::Vertical).spacing(10).build();
-    let image_grid = gtk4::FlowBox::builder().max_children_per_line(5).selection_mode(gtk4::SelectionMode::None).build();
-    wallpaper_box.append(&image_grid);
+    let wallpaper_box = GtkBox::builder().orientation(Orientation::Vertical).spacing(0).build();
+
+    let output = Command::new("/home/ekah/.config/hypr/scripts/swwwallpaper.sh")
+        .output()
+        .expect("Failed to run swwwallpaper.sh");
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let line = stdout.trim();
+
+    let parts: Vec<&str> = line.split(':').collect();
+    let display_name = parts[0].trim().to_string();
+
+    let rest = parts[1];
+    let resolution_part = rest.split(',').next().unwrap().trim().to_string();
+
+    let image_path_part = line.split("image:").nth(1).unwrap().trim();
+    let image_filename = image_path_part
+        .rsplit('/')
+        .next()
+        .unwrap()
+        .replace(".blur", "");
+
+    let display_label = gtk4::Label::new(Some(&format!("Display: {}", display_name)));
+    let resolution_label = gtk4::Label::new(Some(&format!("Resolution: {}", resolution_part)));
+
+    // Load the image from ~/.config/swww/cynage/{image_filename}
+    let home_dir = std::env::var("HOME").unwrap();
+    let image_path = format!("{}/.config/swww/cynage/{}", home_dir, image_filename);
+
+    let file = gtk4::gio::File::for_path(image_path);
+    let texture = gtk4::gdk::Texture::from_file(&file).unwrap();
+    let current_pic = gtk4::Picture::for_paintable(&texture);
+    let current_pic_ref = Rc::new(RefCell::new(current_pic.clone()));
+
+    let current_wall = GtkBox::new(Orientation::Horizontal, 2);
+
+    let wall_info = GtkBox::new(Orientation::Vertical, 10);
+    wall_info.set_hexpand(true);
+
+    wall_info.append(&display_label);
+    wall_info.append(&resolution_label);
+
+    current_wall.append(&current_pic);
+    current_wall.append(&wall_info);
+    current_wall.set_widget_name("current_wall");
+
+
+    let scrolled_window = gtk4::ScrolledWindow::builder()
+        .min_content_height(150)
+        .hscrollbar_policy(gtk4::PolicyType::Automatic)
+        .vscrollbar_policy(gtk4::PolicyType::Never)
+        .hexpand(true)
+        .vexpand(false)
+        .build();
+    scrolled_window.set_css_classes(&["wall_s"]);
+
+    let image_grid = GtkBox::builder()
+        .orientation(gtk4::Orientation::Horizontal)
+        .spacing(10)
+        .build();
+
+    scrolled_window.set_child(Some(&image_grid));
+
+    wallpaper_box.append(&current_wall);
+    wallpaper_box.append(&scrolled_window);
 
     // Load images dynamically
     let home_dir = std::env::var("HOME").unwrap();
@@ -125,20 +242,34 @@ fn build_ui(app: &Application) {
                 let filename = path.file_name().unwrap().to_string_lossy().to_string();
                 let img_path = path.clone();
                 let btn = Button::builder().build();
-                let pixbuf = gtk4::gdk_pixbuf::Pixbuf::from_file_at_scale(img_path, 160, 90, true).ok();
+                btn.set_css_classes(&["walls"]);
+                let pixbuf = gtk4::gdk_pixbuf::Pixbuf::from_file_at_scale(img_path, 260, 260, true).ok();
                 if let Some(pix) = pixbuf {
                     let image = Image::from_pixbuf(Some(&pix));
+                    image.set_pixel_size(260);
+                    image.add_css_class("thumbnail");
                     btn.set_child(Some(&image));
                 }
 
                 // Clicking image button to execute script
                 let home_dir_cloned = home_dir.clone();
+                let filename_clone = filename.clone();
+                let current_pic_clone = current_pic_ref.clone();
                 btn.connect_clicked(move |_| {
-                    let target_path = format!("{}/.config/swww/cynage/{}", home_dir_cloned, filename);
+                    let target_path = format!("{}/.config/swww/cynage/{}", home_dir_cloned, filename_clone);
                     let script_path = format!("{}/.config/hypr/scripts/swwwallpaper.sh", home_dir_cloned);
-                    let _ = Command::new(script_path).arg("-s").arg(target_path).spawn();
+                    let _ = Command::new(script_path).arg("-s").arg(&target_path).spawn();
+                    let file = gtk4::gio::File::for_path(&target_path);
+                    if let Ok(texture) = gtk4::gdk::Texture::from_file(&file) {
+                        let new_pic = gtk4::Picture::for_paintable(&texture);
+                        new_pic.set_hexpand(true);
+                        new_pic.set_vexpand(true);
+                        new_pic.set_halign(gtk4::Align::Fill);
+                        new_pic.set_valign(gtk4::Align::Fill);
+                        current_pic_clone.borrow_mut().set_paintable(Some(&texture));
+                    }
                 });
-                image_grid.insert(&btn, -1);
+                image_grid.append(&btn);
             }
         }
     }
