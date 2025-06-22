@@ -1,9 +1,21 @@
-use gtk4::{prelude::*, Switch, Frame};
-use gtk4::{Application, ApplicationWindow, Box as GtkBox, Button, HeaderBar, Image, Label, Orientation, Stack};
-use gtk4::gdk::Display;
-use gtk4::CssProvider;
+use gtk4::{
+    prelude::*, Switch, Frame, Application, ApplicationWindow, Box as GtkBox, Button, HeaderBar, Image, Label, Orientation, Stack, GestureDrag, 
+    Fixed, MessageDialog , gdk::Display , CssProvider, glib, ResponseType, Widget, DrawingArea
+};
 use std::{cell::RefCell, fs, path::PathBuf, process::Command, rc::Rc};
-use gtk4::glib;
+use std::collections::HashMap;
+use std::env;
+use std::io::Write;
+
+struct MonitorInfo {
+    name: String,
+    width: i32,
+    height: i32,
+    frame: Frame,
+}
+
+const SCALE: f64 = 0.1;
+const SNAP_SIZE: i32 = 50; 
 
 fn typing_effect(label: &Label, text: &str, delay_ms: u64) {
     let label = label.clone();
@@ -24,21 +36,7 @@ fn typing_effect(label: &Label, text: &str, delay_ms: u64) {
     });
 }
 
-fn is_system_theme_light() -> bool {
-    let output = Command::new("sh")
-        .arg("-c")
-        .arg("gsettings get org.gnome.desktop.interface color-scheme")
-        .output();
-
-    if let Ok(output) = output {
-        let prefer_output = String::from_utf8_lossy(&output.stdout).trim().to_string();
-        return prefer_output != "'prefer-dark'";
-    }
-    true  
-}
-
-fn set_monitors(boxxy: &GtkBox){
-    // Run hyprctl monitors all
+fn load_monitoors(fixed: &Fixed) -> HashMap<String, MonitorInfo> {
     let output = Command::new("hyprctl")
         .arg("monitors")
         .arg("all")
@@ -46,11 +44,8 @@ fn set_monitors(boxxy: &GtkBox){
         .expect("failed to execute hyprctl");
     let stdout = String::from_utf8_lossy(&output.stdout);
 
-    // Create fixed container to hold monitor widgets
-    let fixed = gtk4::Fixed::new();
-    let scale = 0.1; // scale down to 10% for visualization
+    let mut monitors = HashMap::new();
 
-    // Parse each monitor block
     for block in stdout.split("Monitor ").skip(1) {
         let mut name = "";
         let mut width = 0;
@@ -65,20 +60,17 @@ fn set_monitors(boxxy: &GtkBox){
 
         for line in lines {
             if line.contains(" at ") {
-                // Example line: 1920x1080@144.00301 at 0x0
                 let parts: Vec<_> = line.trim().split(" at ").collect();
                 if parts.len() == 2 {
                     let res = parts[0].split('@').next().unwrap_or("").trim();
                     let pos = parts[1].trim();
 
-                    // Parse resolution
                     let res_parts: Vec<_> = res.split('x').collect();
                     if res_parts.len() == 2 {
                         width = res_parts[0].parse().unwrap_or(0);
                         height = res_parts[1].parse().unwrap_or(0);
                     }
 
-                    // Parse position
                     let pos_parts: Vec<_> = pos.split('x').collect();
                     if pos_parts.len() == 2 {
                         pos_x = pos_parts[0].parse().unwrap_or(0);
@@ -88,26 +80,189 @@ fn set_monitors(boxxy: &GtkBox){
             }
         }
 
-        // Create a frame representing the monitor
         let frame = Frame::builder()
-            .label(name)
-            .width_request((width as f64 * scale) as i32)
-            .height_request((height as f64 * scale) as i32)
+            .width_request((width as f64 * SCALE) as i32)
+            .height_request((height as f64 * SCALE) as i32)
             .build();
 
-        let label = Label::new(Some(&format!("{width}x{height} @ {pos_x}x{pos_y}")));
-        frame.set_child(Some(&label));
+        frame.set_child(Some(&Label::new(Some(name))));
 
-        // Add to fixed container at scaled position
-        fixed.put(
-            &frame,
-            pos_x as f64 * scale,
-            pos_y as f64 * scale,
+        fixed.put(&frame, pos_x as f64 * SCALE, pos_y as f64 * SCALE);
+
+        enable_dragging(&frame, fixed);
+
+        monitors.insert(
+            name.to_string(),
+            MonitorInfo { name: name.to_string(), width, height, frame: frame.clone() },
         );
     }
 
-    // Add fixed container into the box you provided
-    boxxy.append(&fixed);
+    monitors
+}
+
+fn enable_dragging(frame: &Frame, fixed: &Fixed) {
+    let start_offset = Rc::new(RefCell::new((0.0, 0.0)));
+    let grid_lines = Rc::new(RefCell::new(Vec::new()));
+
+    let drag = GestureDrag::new();
+    drag.set_button(0); // allow any button
+
+    drag.connect_drag_begin({
+        let frame = frame.clone();
+        let fixed = fixed.clone();
+        let start_offset = start_offset.clone();
+        let grid_lines = grid_lines.clone();
+
+        move |_gesture, start_x, start_y| {
+            // Set dragging cursor
+            frame.set_cursor_from_name(Some("grab"));
+
+            let frame_widget: &Widget = frame.as_ref();
+            let fixed_widget: &Widget = fixed.as_ref();
+            if let Some((fx, fy)) = frame_widget.translate_coordinates(fixed_widget, 0.0, 0.0) {
+                start_offset.replace((fx - start_x, fy - start_y));
+            }
+
+            // Draw snap grid
+            let parent_alloc = fixed.allocation();
+            let mut lines = Vec::new();
+
+            for x in (0..parent_alloc.width()).step_by((SNAP_SIZE as f64 * SCALE) as usize) {
+                let l = DrawingArea::builder()
+                    .width_request(1)
+                    .height_request(parent_alloc.height())
+                    .css_classes(vec!["grid-line"])
+                    .build();
+                fixed.put(&l, x as f64, 0.0);
+                l.show();
+                lines.push(l);
+            }
+
+            for y in (0..parent_alloc.height()).step_by((SNAP_SIZE as f64 * SCALE) as usize) {
+                let l = DrawingArea::builder()
+                    .width_request(parent_alloc.width())
+                    .height_request(1)
+                    .css_classes(vec!["grid-line"])
+                    .build();
+                fixed.put(&l, 0.0, y as f64);
+                l.show();
+                lines.push(l);
+            }
+
+            grid_lines.replace(lines);
+        }
+    });
+
+    drag.connect_drag_update({
+        let frame = frame.clone();
+        let fixed = fixed.clone();
+        let start_offset = start_offset.clone();
+
+        move |_gesture, x, y| {
+            let (offset_x, offset_y) = *start_offset.borrow();
+            let new_x = x + offset_x;
+            let new_y = y + offset_y;
+
+            let parent_alloc = fixed.allocation();
+            let frame_alloc = frame.allocation();
+
+            let clamped_x = new_x.clamp(0.0, (parent_alloc.width() - frame_alloc.width()) as f64);
+            let clamped_y = new_y.clamp(0.0, (parent_alloc.height() - frame_alloc.height()) as f64);
+
+            fixed.move_(&frame, clamped_x, clamped_y);
+        }
+    });
+
+    drag.connect_drag_end({
+        let frame = frame.clone();
+        let fixed = fixed.clone();
+        let start_offset = start_offset.clone();
+        let grid_lines = grid_lines.clone();
+
+        move |_gesture, release_x, release_y| {
+            frame.set_cursor_from_name(None); // Restore cursor
+
+            let (offset_x, offset_y) = *start_offset.borrow();
+            let target_x = release_x + offset_x;
+            let target_y = release_y + offset_y;
+
+            let parent_alloc = fixed.allocation();
+            let frame_alloc = frame.allocation();
+
+            let clamped_x = target_x.clamp(0.0, (parent_alloc.width() - frame_alloc.width()) as f64);
+            let clamped_y = target_y.clamp(0.0, (parent_alloc.height() - frame_alloc.height()) as f64);
+
+            let snapped_x = ((clamped_x / (SCALE * SNAP_SIZE as f64)).round() * (SCALE * SNAP_SIZE as f64)).round();
+            let snapped_y = ((clamped_y / (SCALE * SNAP_SIZE as f64)).round() * (SCALE * SNAP_SIZE as f64)).round();
+
+            fixed.move_(&frame, snapped_x, snapped_y);
+
+            // Remove grid lines
+            for l in grid_lines.borrow().iter() {
+                fixed.remove(l);
+            }
+            grid_lines.borrow_mut().clear();
+        }
+    });
+
+    frame.add_controller(drag);
+}
+
+
+fn save_monitor_layout(monitors: &HashMap<String, MonitorInfo>, parent_widget: &impl IsA<gtk4::Widget>) {
+    let mut config = String::new();
+
+    for monitor in monitors.values() {
+        let alloc = monitor.frame.allocation();
+        let pos_x = (alloc.x() as f64 / SCALE).round() as i32;
+        let pos_y = (alloc.y() as f64 / SCALE).round() as i32;
+        config.push_str(&format!(
+            "monitor = {}, {}x{}, {}x{}, 1\n",
+            monitor.name, monitor.width, monitor.height, pos_x, pos_y
+        ));
+    }
+
+    // Confirmation dialog
+    let dialog = MessageDialog::builder()
+        .text("Apply this monitor layout?")
+        .secondary_text(&config)
+        .modal(true)
+        .transient_for(&parent_widget.root().unwrap().downcast::<ApplicationWindow>().unwrap())
+        .build();
+
+    dialog.add_buttons(&[("Cancel", ResponseType::Cancel), ("Apply", ResponseType::Accept)]);
+
+    dialog.connect_response(move |dialog, response| {
+        if response == ResponseType::Accept {
+            // Write config
+            let home_dir = env::var("HOME").unwrap();
+            let config_path = format!("{}/.config/hypr/monitors.conf", home_dir);
+
+            let mut file = fs::File::create(&config_path).expect("Failed to write file");
+            file.write_all(config.as_bytes()).expect("Failed to write");
+
+            println!("Monitor layout saved to {}", config_path);
+
+            // Optional: Live reload hyprland
+            let _ = Command::new("hyprctl").arg("reload").output();
+        }
+        dialog.close();
+    });
+
+    dialog.show();
+}
+
+fn is_system_theme_light() -> bool {
+    let output = Command::new("sh")
+        .arg("-c")
+        .arg("gsettings get org.gnome.desktop.interface color-scheme")
+        .output();
+
+    if let Ok(output) = output {
+        let prefer_output = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        return prefer_output != "'prefer-dark'";
+    }
+    true  
 }
 
 fn setup_switch(theme_switch: &Switch) {
@@ -363,6 +518,9 @@ fn load_css() {
             background-color: #fff;
         }
 
+        .grid-line {
+            background-color: rgba(0,0,0,0.2);
+        }
 
     "#;
 
@@ -611,8 +769,32 @@ fn build_ui(app: &Application) {
     let shell_settings_box = GtkBox::new(Orientation::Vertical, 2);
 
     // monitor
-    let monitor_box = GtkBox::new(Orientation::Horizontal, 3);
-    set_monitors(&monitor_box);
+    let monitor_box = GtkBox::new(Orientation::Vertical, 10);
+    let fixed = Fixed::new();
+    fixed.set_size_request(4000, 3000); // Large canvas for multiple monitors
+
+    let scrolled = gtk4::ScrolledWindow::new();
+    scrolled.set_policy(gtk4::PolicyType::Automatic, gtk4::PolicyType::Automatic);
+    scrolled.set_size_request(800, 400);
+
+    scrolled.set_child(Some(&fixed));
+
+    monitor_box.append(&scrolled);
+
+    // Load monitors
+    let monitors = Rc::new(RefCell::new(load_monitoors(&fixed)));
+
+    // Save button
+    let save_button = Button::with_label("Save Layout");
+    monitor_box.append(&save_button);
+
+    // Save button logic
+    let monitors_clone = monitors.clone();
+    let save_button_clone = save_button.clone();
+    save_button.connect_clicked(move |_| {
+        save_monitor_layout(&monitors_clone.borrow(), &save_button_clone);
+    });
+    
 
     // switches
     let switch_box = gtk4::Grid::builder()
