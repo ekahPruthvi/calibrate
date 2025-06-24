@@ -872,7 +872,7 @@ fn build_ui(app: &Application) {
         .transition_type(gtk4::StackTransitionType::None)
         .build();
 
-    let shell_settings_box = GtkBox::new(Orientation::Horizontal, 2);
+    let shell_settings_box = GtkBox::new(Orientation::Horizontal, 50);
     let shell_settings_box_clone = shell_settings_box.clone();
 
 
