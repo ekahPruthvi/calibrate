@@ -395,15 +395,17 @@ fn load_css() {
     let csss = r#"
         *{
             font-family: "BigBlueTerm437 Nerd Font";
+            /*
             text-shadow:
                 0 0 7px #fff,
                 0 0 10px #fff,
-                0 0 52px rgba(232, 255, 227, 0.64);
-            color: white;
+                0 0 52px rgba(232, 255, 227, 0.64); */
+            
+            color: rgb(5, 117, 97);
         }
 
         window {
-            background-color: rgba(30, 30, 30, 0.58);
+            background-color: rgba(30, 30, 30, 0.76);
             border-radius: 13px;
             box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
             border: 1px solid rgba(255, 255, 255, 0.1);
@@ -443,7 +445,7 @@ fn load_css() {
             all: unset;
             background-color: rgba(255, 255, 255, 0);
             border-radius: 0px;
-            border: 1px solid #05947A;
+            border: 1px solid rgb(5, 148, 122);
             padding: 10px;
             padding-right: 30px;
             padding-left: 30px;
@@ -502,6 +504,29 @@ fn load_css() {
             border-radius: 10px;
         }
 
+        .display_win scrollbar {
+            background-color: transparent;
+            border: none;
+            padding: 4px;
+        }
+
+        .display_win scrollbar slider {
+            background-color: rgb(5, 148, 122);
+            border-radius: 0px;
+            min-height: 10px;
+            border: none;
+            transition: background-color 0.3s ease;
+        }
+
+        .display_win scrollbar slider:hover {
+            background-color: rgb(5, 197, 162);
+        }
+
+        .display_win scrollbar trough {
+            background-color: transparent;
+            border-radius: 10px;
+        }
+
         #current_wall {
             background-color: rgba(139, 139, 139, 0.09);
             padding: 5px;
@@ -517,29 +542,29 @@ fn load_css() {
 
         switch {
             background-color: rgba(255, 255, 255, 0.1);
-            border-radius: 20px;
-            border: 1px solid rgba(255, 255, 255, 0.4);
-            min-width: 60px;
+            border-radius: 0px;
+            border: 1px solid rgba(5, 148, 122, 0.63);
+            min-width: 80px;
             min-height: 30px;
             padding: 3px;
             transition: background-color 0.3s ease;
         }
 
         switch:checked {
-            background-color: rgba(100, 200, 250, 0.5);
-            border: 1px solid rgba(255, 255, 255, 0.6);
+            background-color: rgba(5, 148, 122, 0.63);
+            border: 1px solid rgba(5, 148, 122, 0.63);
         }
 
         switch slider {
-            background-color: white;
-            border-radius: 50%;
+            background-color: rgba(5, 148, 122, 0.63);
+            border-radius: 0px;
             min-width: 24px;
             min-height: 24px;
             transition: transform 0.3s ease, background-color 0.3s ease;
         }
 
         switch:checked slider {
-            background-color: #fff;
+            background-color: rgba(255, 255, 255, 0.1);
         }
 
         .grid-line {
@@ -547,21 +572,21 @@ fn load_css() {
         }
 
         .sound_btn {
-            background-color: #333;
-            color: white;
-            border-radius: 12px;
+            background-color: rgba(41, 41, 41, 0.25);
+            border-radius: 0px;
             padding: 12px;
             font-size: 16px;
-            border: 2px solid transparent;
+            border: 1px solid rgba(5, 148, 122, 0.63);
         }
 
         .sound_btn:hover {
-            background-color: #444;
+            background-color: rgba(5, 148, 122, 0.13);
         }
 
         .sound_btn_selected {
-            border: 2px solid #4CAF50;
-            background-color: #2e7d32;
+            border: 2px solid rgba(5, 148, 122, 0.63);
+            background-color: rgba(5, 197, 162, 0.63);
+            color: rgba(3, 90, 74, 0.63);
         }
         
     "#;
@@ -632,19 +657,10 @@ fn build_ui(app: &Application) {
     title.set_hexpand(true);
     header_box.append(&title);
 
-    let stack = Stack::builder().transition_type(gtk4::StackTransitionType::SlideLeftRight).build();
-    stack.add_titled(&Label::new(Some("Home Page")), Some("home"), "Home");
-
-    let stack_box = GtkBox::new(Orientation::Horizontal, 5);
-    stack_box.set_hexpand(true);
-    stack_box.set_vexpand(true);
-    let stack_tab_box = GtkBox::new(Orientation::Vertical, 5);
-
     // Stack_tab_box  ---------------------------------------------------------------------------------------------------------------------------------- //
     let stack = Stack::builder()
         .transition_type(gtk4::StackTransitionType::None)
         .build();
-    stack.add_titled(&Label::new(Some("Home Page")), Some("home"), "Home");
 
     let stack_box = GtkBox::new(Orientation::Horizontal, 5);
     stack_box.set_hexpand(true);
@@ -657,6 +673,11 @@ fn build_ui(app: &Application) {
         .margin_start(20)
         .build();
 
+
+    let back_button = Button::with_label("<< Back");
+    back_button.set_visible(false);
+    tabs_box.append(&back_button);
+
     let scu_logo = Image::from_icon_name("scu");
     scu_logo.set_pixel_size(246);
     tabs_box.append(&scu_logo);
@@ -665,7 +686,7 @@ fn build_ui(app: &Application) {
     let tabs_box_clone = tabs_box.clone();
 
     let add_tab_button = |name: &str, page_id: &str| {
-        let button = Button::builder().tooltip_text(page_id).build();
+        let button = Button::builder().build();
         let image = Label::new(Some(&name));
         image.set_justify(gtk4::Justification::Left);
         image.set_halign(gtk4::Align::Start);
@@ -674,11 +695,12 @@ fn build_ui(app: &Application) {
         let page_id_string = page_id.to_lowercase();
         let stack_weak = stack_weak.clone();
         let page_title_clone = page_title.clone();
+        let name_clone = name.to_lowercase();
 
         button.connect_clicked(move |_| {
             if let Some(stack) = stack_weak.upgrade() {
                 stack.set_visible_child_name(&page_id_string);
-                typing_effect(&page_title_clone, &page_id_string, 150);
+                typing_effect(&page_title_clone, &name_clone, 100);
             }
         });
 
@@ -705,8 +727,7 @@ fn build_ui(app: &Application) {
         .halign(gtk4::Align::Center)
         .build();
 
-    stack.remove(&stack.child_by_name("home").unwrap());
-    stack.add_titled(&home_box, Some("home"), "Home");
+    stack.add_titled(&Label::new(Some("Home Page")), Some("home"), "Home");
 
     stack_box.append(&tabs_box);
     stack_box.append(&stack);
@@ -845,11 +866,62 @@ fn build_ui(app: &Application) {
     // shell settings ---------------------------------------------------------------------------------------------------------------------------------- //
     
     let shell_settings_scroller: gtk4::ScrolledWindow = gtk4::ScrolledWindow::new();
-    shell_settings_scroller.set_policy(gtk4::PolicyType::Never, gtk4::PolicyType::Automatic);
+    shell_settings_scroller.set_policy(gtk4::PolicyType::Automatic, gtk4::PolicyType::Never);
+
+    let shell_stack = Stack::builder()
+        .transition_type(gtk4::StackTransitionType::None)
+        .build();
+
+    let shell_settings_box = GtkBox::new(Orientation::Horizontal, 2);
+    let shell_settings_box_clone = shell_settings_box.clone();
 
 
-    let shell_settings_box = GtkBox::new(Orientation::Vertical, 2);
+    let shell_stack_weak = shell_stack.downgrade();
+    let add_shell_button = |icon_name: &str, page_id: &str, page_name: &str| {
+        let btn_box = GtkBox::new(Orientation::Vertical, 2);
+        let image = Image::from_icon_name(&icon_name);
+        image.set_pixel_size(146);
+        let label = Label::new(Some(&page_id));
+
+        btn_box.append(&image);
+        btn_box.append(&label);
+
+        let button = Button::builder().child(&btn_box).build();
+
+        let page_id_string = page_id.to_lowercase();
+        let page_title_clone = page_title.clone();
+        let page_name_clone = page_name.to_lowercase();
+        let back_button_clone = back_button.clone();   
+        let stack_weak = shell_stack_weak.clone(); 
+
+        button.connect_clicked(move |_| {
+            if let Some(stack) = stack_weak.upgrade() {    
+                stack.set_visible_child_name(&page_id_string);
+                typing_effect(&page_title_clone, &page_name_clone, 50);
+                back_button_clone.set_visible(true);
+            }
+        });
+
+        shell_settings_box_clone.append(&button);
+    };
+    
+
+    add_shell_button("computer", "display", "Shell configs >> Display settings");
+    add_shell_button("accessibility" , "switches", "Shell configs >> Miscellaneous Settings");
+    add_shell_button("folder-sound", "startup", "Shell configs >> Startup sound settings");
+
+
+    let shell_stack_clone_back: Stack = shell_stack.clone();
+    let page_title_clone = page_title.clone();
+    let back_button_clone = back_button.clone();
+    back_button.connect_clicked(move |_| {
+        shell_stack_clone_back.set_visible_child_name("shell_settings");
+        typing_effect(&page_title_clone, "shell configs", 100);
+        back_button_clone.set_visible(false);
+    });
+
     shell_settings_scroller.set_child(Some(&shell_settings_box));
+    shell_stack.add_titled(&shell_settings_scroller, Some("shell_settings"), "cynide shell settings");
 
     // monitor
     let monitor_box = GtkBox::new(Orientation::Vertical, 10);
@@ -858,10 +930,13 @@ fn build_ui(app: &Application) {
 
     let scrolled: gtk4::ScrolledWindow = gtk4::ScrolledWindow::new();
     scrolled.set_policy(gtk4::PolicyType::Automatic, gtk4::PolicyType::Automatic);
-    scrolled.set_size_request(800, 250);
+    scrolled.set_hexpand(true);
+    scrolled.set_vexpand(true);
+    scrolled.set_css_classes(&["display_win"]);
 
     scrolled.set_child(Some(&fixed));
 
+    monitor_box.append(&back_button);
     monitor_box.append(&scrolled);
 
     // Load monitors
@@ -880,12 +955,16 @@ fn build_ui(app: &Application) {
     
 
     // switches
-    let switch_box = gtk4::Grid::builder()
+    let switch_box = GtkBox::new(Orientation::Vertical, 5);
+    
+    let switch_grid = gtk4::Grid::builder()
         .column_homogeneous(true)
         .row_homogeneous(true)
         .column_spacing(10)
         .row_spacing(10)
         .build();
+
+    switch_box.append(&switch_grid);
 
     // themeswitch 
     let theme_switch = gtk4::Switch::builder().build();
@@ -906,8 +985,8 @@ fn build_ui(app: &Application) {
     }
 
 
-    switch_box.attach(&theme_switch_label, 0, 0, 1, 1);
-    switch_box.attach(&theme_switch, 1, 0, 1, 1);
+    switch_grid.attach(&theme_switch_label, 0, 0, 1, 1);
+    switch_grid.attach(&theme_switch, 1, 0, 1, 1);
 
     // notification sound
     let notiv_sound_label = Label::new(Some("Notifications sound toggle switch"));
@@ -927,13 +1006,14 @@ fn build_ui(app: &Application) {
         }
     }
     
-    switch_box.attach(&notiv_sound_label, 0, 1, 1, 1);
-    switch_box.attach(&notiv_sound_switch, 1, 1, 1, 1);
+    switch_grid.attach(&notiv_sound_label, 0, 1, 1, 1);
+    switch_grid.attach(&notiv_sound_switch, 1, 1, 1, 1);
 
     // start up sound
 
     let startup_box = GtkBox::new(Orientation::Vertical, 10);
     let select_startup_label = Label::new(Some("Select startup sound"));
+    select_startup_label.set_halign(gtk4::Align::Start);
     let sound_button_box = GtkBox::new(Orientation::Horizontal, 5);
 
     startup_box.append(&select_startup_label);
@@ -967,6 +1047,7 @@ fn build_ui(app: &Application) {
                 let selected_button_clone = selected_button.clone();
                 let config_path_clone = config_path.clone();
                 let filename_clone = filename.clone();
+                let notiv_box_clone_sound = notif_box.clone();
 
                 btn.connect_clicked(move |btn_ref| {
                     // Deselect previous button
@@ -992,6 +1073,8 @@ fn build_ui(app: &Application) {
                         let _ = file.write_all(conf_content.as_bytes());
                     }
 
+                    show_notification(&notiv_box_clone_sound, "Startup Sound Modified");
+
                 });
 
                 sound_button_box.append(&btn);
@@ -999,15 +1082,13 @@ fn build_ui(app: &Application) {
         }
     }
 
-    shell_settings_box.append(&monitor_box);
-    shell_settings_box.append(&switch_box);
-    shell_settings_box.append(&startup_box);
-    stack.add_titled(&shell_settings_scroller, Some("cynide"), "Cynide Settings");
+    shell_stack.add_titled(&monitor_box, Some("display"), "Display_settings");
+    shell_stack.add_titled(&switch_box, Some("switches"), "Misc");
+    shell_stack.add_titled(&startup_box, Some("startup"), "startup_sound");
 
+    stack.add_titled(&shell_stack, Some("cynide"), "Cynide Settings");
 
     // window ----------------------------------------------------------------------------------------------------------------------------------------- //
-    stack_box.append(&stack_tab_box);
-    stack_box.append(&stack);
 
     main_box.append(&header_box);
     main_box.append(&stack_box);
