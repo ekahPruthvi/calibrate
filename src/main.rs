@@ -1099,7 +1099,9 @@ fn build_ui(app: &Application) {
 }
 
 fn main() {
-    let app = Application::builder().application_id("ekah.scu.calibrate").build();
+    let app = Application::builder()
+        .application_id("ekah.scu.calibrate")
+        .build();
     app.connect_activate(|app| {
         load_css();
         build_ui(app);
