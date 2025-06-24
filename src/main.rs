@@ -1,4 +1,3 @@
-use gtk4::Picture;
 use gtk4::{
     prelude::*, Switch, Frame, Application, ApplicationWindow, Box as GtkBox, Button, Image, Label, Orientation, Stack, GestureDrag, 
     Fixed, MessageDialog , gdk::Display , CssProvider, glib, ResponseType, Widget, DrawingArea
@@ -316,33 +315,22 @@ fn setup_sound_switch(switch: &Switch) {
     });
 }
 
-fn show_notification(notif_area: &GtkBox, text: &str) {
-    notif_area.set_visible(true);
-    let notif_box = GtkBox::builder()
-        .orientation(Orientation::Horizontal)
-        .spacing(10)
-        .build();
+fn show_notification(notif_box: &GtkBox, text: &str) {
+    let mut child = notif_box.first_child();
+    while let Some(c) = child {
+        child = c.next_sibling();  // get next before removing
+        notif_box.remove(&c);
+    }
 
     let notif_label = Label::new(Some(text));
-    let close_btn = Button::builder().label("X").build();
 
     notif_box.append(&notif_label);
-    notif_box.append(&close_btn);
     notif_box.set_widget_name("notif_box");
-
-    notif_area.append(&notif_box);
     notif_box.show();
 
     let notif_box_clone = notif_box.clone();
-    close_btn.connect_clicked(move |_| {
+    glib::timeout_add_local(std::time::Duration::from_secs(4), move || {
         notif_box_clone.hide();
-    });
-
-    let notiv_area_clone = notif_area.clone();
-    let notif_box_clone2 = notif_box.clone();
-    glib::timeout_add_local(std::time::Duration::from_secs(2), move || {
-        notiv_area_clone.set_visible(false);
-        notif_box_clone2.hide();
         glib::ControlFlow::Break
     });
 }
@@ -410,13 +398,8 @@ fn load_css() {
             text-shadow:
                 0 0 7px #fff,
                 0 0 10px #fff,
-                0 0 21px #fff,
-                0 0 42px #0fa,
-                0 0 82px #0fa,
-                0 0 92px #0fa,
-                0 0 102px #0fa,
-                0 0 151px #0fa;
-            color: #fff;
+                0 0 52px rgba(232, 255, 227, 0.64);
+            color: white;
         }
 
         window {
@@ -430,31 +413,46 @@ fn load_css() {
             background-position: -5px -5px;
         }
 
-        headerbar {
-            all: unset;
-            padding: 0px;
+        .header {
+            padding: 10px;
             margin: 0px;
             background-color: rgba(34, 34, 34, 0);
-            border: 1px solid rgba(105, 255, 173, 0.29);
             min-height: 0px;
             box-shadow: none;
         }
 
+        .footer {
+            padding: 10px;
+            margin: 0px;
+            background-color: rgba(34, 34, 34, 0);
+            min-height: 0px;
+            box-shadow: none;
+        }
+
+        #notif_box {
+            margin: 0px;
+            padding: 0px;
+        }
+
         .label {
-            color: white;
+            color: black;
             font-size: 16px;
         }
 
         button {
             all: unset;
-            background-color: rgba(255, 255, 255, 0.1);
-            border-radius: 10px;
-            border: 1px solid rgba(255, 255, 255, 0.2);
+            background-color: rgba(255, 255, 255, 0);
+            border-radius: 0px;
+            border: 1px solid #05947A;
             padding: 10px;
+            padding-right: 30px;
+            padding-left: 30px;
+            margin: 0px;
         }
 
         button:hover {
-            background-color: rgba(255, 255, 255, 0.2);
+            background-color: #05947A;
+            color: rgb(0, 0, 0);
         }
 
         button.walls {
@@ -476,27 +474,9 @@ fn load_css() {
             padding: 20px;
         }
 
-        button.home_btn {
-            background-color: rgba(0, 0, 0, 0.09);
-            border-radius: 5px;
-            border: 0.1px solid rgba(255, 255, 255, 0.29);
-            color: rgba(255, 255, 255, 0.21);
-            padding: 30px;
-            box-shadow: inset 0 0 1px 1px rgba(32, 32, 32, 0.76);
-        }
-
-        button.home_btn:hover {
-            color: rgba(255, 255, 255, 0.53);
-            box-shadow: 0 0 20px 1px rgba(0, 0, 0, 0.93);
-        }
-
-        #hello {
-            font-weight: 700;
-            font-size: 20px; 
-        }
-
         .wall_s {
-            padding: 10px;
+            padding: 0px;
+            border: 1px solid #05947A;
         }
 
         .wall_s scrollbar {
@@ -506,15 +486,15 @@ fn load_css() {
         }
 
         .wall_s scrollbar slider {
-            background-color: rgba(255, 255, 255, 0.7);
-            border-radius: 10px;
-            min-width: 4px;
-            min-height: 30px;
+            background-color: rgb(5, 148, 122);
+            border-radius: 0px;
+            min-height: 10px;
+            border: none;
             transition: background-color 0.3s ease;
         }
 
         .wall_s scrollbar slider:hover {
-            background-color: rgba(255, 255, 255, 1.0);
+            background-color: rgb(5, 197, 162);
         }
 
         .wall_s scrollbar trough {
@@ -523,8 +503,9 @@ fn load_css() {
         }
 
         #current_wall {
-            background-color: rgba(255, 255, 255, 0.09);
+            background-color: rgba(139, 139, 139, 0.09);
             padding: 5px;
+            border: 1px solid rgba(5, 148, 122, 0.63);
             margin: 0;
         }
 
@@ -605,34 +586,50 @@ fn build_ui(app: &Application) {
 
     let main_box = GtkBox::builder().orientation(Orientation::Vertical).spacing(0).build();
 
-    let notif_area = GtkBox::builder()
-        .orientation(Orientation::Vertical)
-        .spacing(0)
-        .build();
-
-    notif_area.set_visible(false);
-
     let home_dir = std::env::var("HOME").unwrap();
+
+    let footer = GtkBox::new(Orientation::Horizontal, 0);
+    footer.set_hexpand(true);
+    footer.set_halign(gtk4::Align::Fill);
+    footer.set_css_classes(&["footer"]);
+
+    let page_title = Label::new(Some("HOME"));
+
+    footer.append(&page_title);
+
+
+    let notif_box = GtkBox::builder()
+        .orientation(Orientation::Horizontal)
+        .spacing(2)
+        .build();
+    notif_box.set_hexpand(true);
+    notif_box.set_halign(gtk4::Align::End);
+    notif_box.hide();
+
+    footer.append(&notif_box);
 
     // header ----------------------------------------------------------------------------------------------------------------------------------------- //
     let header_box = GtkBox::new(Orientation::Horizontal, 0);
     header_box.set_hexpand(true);
     header_box.set_halign(gtk4::Align::Fill);
+    header_box.set_css_classes(&["header"]);
     
     let scu_info = Label::new(Some("A Stertorus Cerebral Unit Software"));
     scu_info.set_justify(gtk4::Justification::Left);
     scu_info.set_halign(gtk4::Align::Start);
+    scu_info.set_widget_name("scu_title");
     header_box.append(&scu_info);
 
     let hello = Label::new(Some(""));
-    hello.set_justify(gtk4::Justification::Left);
-    hello.set_halign(gtk4::Align::Start);
+    hello.set_halign(gtk4::Align::Center);
+    hello.set_hexpand(true);
     typing_effect(&hello, "Welcome USER.5", 150);
     header_box.append(&hello);
 
     let title = Label::new(Some("Calibrate - COS"));
     title.set_justify(gtk4::Justification::Left);
     title.set_halign(gtk4::Align::End);
+    title.set_hexpand(true);
     header_box.append(&title);
 
     let stack = Stack::builder().transition_type(gtk4::StackTransitionType::SlideLeftRight).build();
@@ -645,7 +642,7 @@ fn build_ui(app: &Application) {
 
     // Stack_tab_box  ---------------------------------------------------------------------------------------------------------------------------------- //
     let stack = Stack::builder()
-        .transition_type(gtk4::StackTransitionType::SlideLeftRight)
+        .transition_type(gtk4::StackTransitionType::None)
         .build();
     stack.add_titled(&Label::new(Some("Home Page")), Some("home"), "Home");
 
@@ -655,56 +652,48 @@ fn build_ui(app: &Application) {
 
     let tabs_box = GtkBox::builder()
         .orientation(Orientation::Vertical)
-        .spacing(5)
+        .spacing(0)
         .margin_top(20)
         .margin_start(20)
         .build();
 
-    let scu_logo = Picture::for_filename("scu.svg");
-    scu_logo.set_size_request(256, 156);
+    let scu_logo = Image::from_icon_name("scu");
+    scu_logo.set_pixel_size(246);
     tabs_box.append(&scu_logo);
 
     let stack_weak = stack.downgrade();
     let tabs_box_clone = tabs_box.clone();
 
-    let add_tab_button = |icon_name: &str, page_id: &str| {
+    let add_tab_button = |name: &str, page_id: &str| {
         let button = Button::builder().tooltip_text(page_id).build();
-        let image = Image::from_icon_name(icon_name);
-        image.set_pixel_size(24);
+        let image = Label::new(Some(&name));
+        image.set_justify(gtk4::Justification::Left);
+        image.set_halign(gtk4::Align::Start);
         button.set_child(Some(&image));
 
         let page_id_string = page_id.to_lowercase();
         let stack_weak = stack_weak.clone();
+        let page_title_clone = page_title.clone();
 
         button.connect_clicked(move |_| {
             if let Some(stack) = stack_weak.upgrade() {
                 stack.set_visible_child_name(&page_id_string);
+                typing_effect(&page_title_clone, &page_id_string, 150);
             }
         });
 
         tabs_box_clone.append(&button);
     };
 
-    add_tab_button("go-home-symbolic", "home");
-    add_tab_button("preferences-desktop-wallpaper-symbolic", "wallpaper");
-    add_tab_button("settings-app-symbolic", "cynide");
-    add_tab_button("network-wired-acquiring-symbolic", "network");
-    add_tab_button("bluetooth-active-symbolic", "bluetooth");
-    add_tab_button("preferences-desktop-keyboard-shortcuts-symbolic", "keybindings");
-    add_tab_button("preferences-system-notifications-symbolic", "notifications");
-    add_tab_button("help-about-symbolic", "about");
+    add_tab_button("Home", "home");
+    add_tab_button("Wallpapers", "wallpaper");
+    add_tab_button("Shell configs", "cynide");
+    add_tab_button("Network", "network");
+    add_tab_button("Bluetooth", "bluetooth");
+    add_tab_button("Show Keybindings", "keybindings");
+    add_tab_button("Notification History", "notifications");
+    add_tab_button("About", "about");
 
-    let mut row = 0;
-    let mut col = 0;
-    let buttons = vec![
-        ("preferences-desktop-wallpaper-symbolic", "wallpaper"),
-        ("settings-app-symbolic", "cynide"),
-        ("network-wired-acquiring-symbolic", "network"),
-        ("bluetooth-active-symbolic", "bluetooth"),
-        ("preferences-desktop-keyboard-shortcuts-symbolic", "keybindings"),
-        ("preferences-system-notifications-symbolic", "notifications"),
-        ("help-about-symbolic", "about"),
-    ];
 
     let home_box = gtk4::Grid::builder()
         .row_spacing(2)
@@ -715,17 +704,6 @@ fn build_ui(app: &Application) {
         .margin_end(20)
         .halign(gtk4::Align::Center)
         .build();
-
-    for (icon, page) in &buttons {
-        let button = Button::builder().tooltip_text(*page).build();
-        let image = Image::from_icon_name(icon);
-        image.set_pixel_size(48);
-        button.set_child(Some(&image));
-        home_box.attach(&button, col, row, 1, 1);
-        button.set_css_classes(&["home_btn"]);
-        col += 1;
-        if col >= 4 { col = 0; row += 1; }
-    }
 
     stack.remove(&stack.child_by_name("home").unwrap());
     stack.add_titled(&home_box, Some("home"), "Home");
@@ -757,9 +735,14 @@ fn build_ui(app: &Application) {
         .replace(".blur", "");
 
     let display_label = gtk4::Label::new(Some(&format!("Display: {}", display_name)));
+    display_label.set_justify(gtk4::Justification::Right);
+    display_label.set_halign(gtk4::Align::End);
+    display_label.set_hexpand(true);
     let resolution_label = gtk4::Label::new(Some(&format!("Resolution: {}", resolution_part)));
+    resolution_label.set_justify(gtk4::Justification::Right);
+    resolution_label.set_halign(gtk4::Align::End);
+    resolution_label.set_hexpand(true);
 
-    // Load the image from ~/.config/swww/cynage/{image_filename}
     let image_path = format!("{}/.config/swww/cynage/{}", home_dir, image_filename);
 
     let file = gtk4::gio::File::for_path(image_path);
@@ -771,6 +754,7 @@ fn build_ui(app: &Application) {
 
     let wall_info = GtkBox::new(Orientation::Vertical, 10);
     wall_info.set_hexpand(true);
+    wall_info.set_halign(gtk4::Align::Fill);
 
     wall_info.append(&display_label);
     wall_info.append(&resolution_label);
@@ -803,7 +787,7 @@ fn build_ui(app: &Application) {
     let home_dir = std::env::var("HOME").unwrap();
     let wallpaper_dir = PathBuf::from(format!("{}/.config/swww/cynage", home_dir));
     if let Ok(entries) = fs::read_dir(wallpaper_dir.clone()) {
-        let notiv_clone_outer_for_wall = notif_area.clone();
+        let notiv_clone_outer_for_wall = notif_box.clone();
         for entry in entries.flatten() {
             let path = entry.path();
             if path.is_file() {
@@ -1026,8 +1010,8 @@ fn build_ui(app: &Application) {
     stack_box.append(&stack);
 
     main_box.append(&header_box);
-    main_box.append(&notif_area);
     main_box.append(&stack_box);
+    main_box.append(&footer);
     window.set_child(Some(&main_box));
     window.present();
 
