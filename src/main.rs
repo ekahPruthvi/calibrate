@@ -5,7 +5,8 @@ use gtk4::{
 use std::{cell::RefCell, fs, path::PathBuf, process::Command, rc::Rc};
 use std::collections::HashMap;
 use std::env;
-use std::io::Write;
+use std::io::{Write, BufReader, BufRead};
+use std::fs::OpenOptions;
 
 struct MonitorInfo {
     name: String,
@@ -379,22 +380,66 @@ fn is_image_dark(image_path: &str) -> bool {
     avg_luminance <= 128.0  // true = dark, false = light
 }
 
+fn extract_current_selection(config_path: &str) -> Option<String> {
+    if let Ok(file) = fs::File::open(config_path) {
+        for line in BufReader::new(file).lines().flatten() {
+            if line.starts_with("exec-once") {
+                // Extract filename
+                if let Some(start) = line.find("/sound/startup/") {
+                    let part = &line[start + "/sound/startup/".len()..];
+                    if let Some(end) = part.find('"') {
+                        return Some(part[..end].to_string());
+                    }
+                    return Some(part.to_string());
+                }
+            }
+        }
+    }
+    None
+}
+
+
 fn load_css() {
     let csss = r#"
+        *{
+            font-family: "BigBlueTerm437 Nerd Font";
+            text-shadow:
+                0 0 7px #fff,
+                0 0 10px #fff,
+                0 0 21px #fff,
+                0 0 42px #0fa,
+                0 0 82px #0fa,
+                0 0 92px #0fa,
+                0 0 102px #0fa,
+                0 0 151px #0fa;
+            color: #fff;
+        }
+
         window {
             background-color: rgba(30, 30, 30, 0.58);
             border-radius: 13px;
             box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
             border: 1px solid rgba(255, 255, 255, 0.1);
             color: white;
+            background-image: radial-gradient(rgba(92, 92, 92, 0.09) 2px, transparent 0);
+            background-size: 30px 30px;
+            background-position: -5px -5px;
         }
 
         headerbar {
             all: unset;
-            padding: 5px;
+            padding: 2px;
             background-color: rgba(34, 34, 34, 0);
-            border: none;
-            box-shadow: none;
+            border: 1px solid #fff;
+            box-shadow:
+                0 0 7px #fff,
+                0 0 10px #fff,
+                0 0 21px #fff,
+                0 0 42px #0fa,
+                0 0 82px #0fa,
+                0 0 92px #0fa,
+                0 0 102px #0fa,
+                0 0 151px #0fa;
         }
 
         .label {
@@ -449,7 +494,7 @@ fn load_css() {
 
         #hello {
             font-weight: 700;
-            font-size: 80px; 
+            font-size: 20px; 
         }
 
         .wall_s {
@@ -522,6 +567,24 @@ fn load_css() {
             background-color: rgba(0,0,0,0.2);
         }
 
+        .sound_btn {
+            background-color: #333;
+            color: white;
+            border-radius: 12px;
+            padding: 12px;
+            font-size: 16px;
+            border: 2px solid transparent;
+        }
+
+        .sound_btn:hover {
+            background-color: #444;
+        }
+
+        .sound_btn_selected {
+            border: 2px solid #4CAF50;
+            background-color: #2e7d32;
+        }
+        
     "#;
 
     let provider = CssProvider::new();
@@ -547,6 +610,8 @@ fn build_ui(app: &Application) {
         .orientation(Orientation::Vertical)
         .spacing(0)
         .build();
+
+    let home_dir = std::env::var("HOME").unwrap();
 
     // header ----------------------------------------------------------------------------------------------------------------------------------------- //
     let header = HeaderBar::builder().build();
@@ -665,7 +730,6 @@ fn build_ui(app: &Application) {
     let resolution_label = gtk4::Label::new(Some(&format!("Resolution: {}", resolution_part)));
 
     // Load the image from ~/.config/swww/cynage/{image_filename}
-    let home_dir = std::env::var("HOME").unwrap();
     let image_path = format!("{}/.config/swww/cynage/{}", home_dir, image_filename);
 
     let file = gtk4::gio::File::for_path(image_path);
@@ -766,16 +830,21 @@ fn build_ui(app: &Application) {
 
     // shell settings ---------------------------------------------------------------------------------------------------------------------------------- //
     
+    let shell_settings_scroller: gtk4::ScrolledWindow = gtk4::ScrolledWindow::new();
+    shell_settings_scroller.set_policy(gtk4::PolicyType::Never, gtk4::PolicyType::Automatic);
+
+
     let shell_settings_box = GtkBox::new(Orientation::Vertical, 2);
+    shell_settings_scroller.set_child(Some(&shell_settings_box));
 
     // monitor
     let monitor_box = GtkBox::new(Orientation::Vertical, 10);
     let fixed = Fixed::new();
     fixed.set_size_request(4000, 3000); // Large canvas for multiple monitors
 
-    let scrolled = gtk4::ScrolledWindow::new();
+    let scrolled: gtk4::ScrolledWindow = gtk4::ScrolledWindow::new();
     scrolled.set_policy(gtk4::PolicyType::Automatic, gtk4::PolicyType::Automatic);
-    scrolled.set_size_request(800, 400);
+    scrolled.set_size_request(800, 250);
 
     scrolled.set_child(Some(&fixed));
 
@@ -847,9 +916,79 @@ fn build_ui(app: &Application) {
     switch_box.attach(&notiv_sound_label, 0, 1, 1, 1);
     switch_box.attach(&notiv_sound_switch, 1, 1, 1, 1);
 
+    // start up sound
+
+    let startup_box = GtkBox::new(Orientation::Vertical, 10);
+    let select_startup_label = Label::new(Some("Select startup sound"));
+    let sound_button_box = GtkBox::new(Orientation::Horizontal, 5);
+
+    startup_box.append(&select_startup_label);
+    startup_box.append(&sound_button_box);
+
+    let config_path = format!("{}/.config/hypr/startup.conf", home_dir);
+    let sound_dir = PathBuf::from(format!("{}/.config/hypr/sound/startup", home_dir));
+
+    let selected_button: Rc<RefCell<Option<Button>>> = Rc::new(RefCell::new(None));
+
+    if let Ok(entries) = fs::read_dir(&sound_dir) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_file() {
+                let filename = path.file_name().unwrap().to_string_lossy().to_string();
+
+                let btn = Button::with_label(&filename);
+                btn.set_css_classes(&["sound_btn"]);
+                btn.set_size_request(100, 100);
+                btn.set_valign(gtk4::Align::Center);
+                btn.set_halign(gtk4::Align::Center);
+
+                // Initial highlight if currently selected
+                if let Some(current_file) = extract_current_selection(&config_path) {
+                    if current_file == filename {
+                        btn.add_css_class("sound_btn_selected");
+                        *selected_button.borrow_mut() = Some(btn.clone());
+                    }
+                }
+
+                let selected_button_clone = selected_button.clone();
+                let config_path_clone = config_path.clone();
+                let filename_clone = filename.clone();
+
+                btn.connect_clicked(move |btn_ref| {
+                    // Deselect previous button
+                    if let Some(prev_btn) = selected_button_clone.borrow_mut().take() {
+                        prev_btn.remove_css_class("sound_btn_selected");
+                    }
+
+                    // Select current
+                    btn_ref.add_css_class("sound_btn_selected");
+                    *selected_button_clone.borrow_mut() = Some(btn_ref.clone());
+
+                    // Write config
+                    let conf_content = format!(
+                        "exec-once = mpv --no-video --volume=100 \"$HOME/.config/hypr/sound/startup/{}\"\n",
+                        filename_clone
+                    );
+                    if let Ok(mut file) = OpenOptions::new()
+                        .write(true)
+                        .truncate(true)
+                        .create(true)
+                        .open(&config_path_clone)
+                    {
+                        let _ = file.write_all(conf_content.as_bytes());
+                    }
+
+                });
+
+                sound_button_box.append(&btn);
+            }
+        }
+    }
+
     shell_settings_box.append(&monitor_box);
     shell_settings_box.append(&switch_box);
-    stack.add_titled(&shell_settings_box, Some("cynide"), "Cynide Settings");
+    shell_settings_box.append(&startup_box);
+    stack.add_titled(&shell_settings_scroller, Some("cynide"), "Cynide Settings");
 
 
     // window ----------------------------------------------------------------------------------------------------------------------------------------- //
