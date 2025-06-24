@@ -1,5 +1,6 @@
+use gtk4::Picture;
 use gtk4::{
-    prelude::*, Switch, Frame, Application, ApplicationWindow, Box as GtkBox, Button, HeaderBar, Image, Label, Orientation, Stack, GestureDrag, 
+    prelude::*, Switch, Frame, Application, ApplicationWindow, Box as GtkBox, Button, Image, Label, Orientation, Stack, GestureDrag, 
     Fixed, MessageDialog , gdk::Display , CssProvider, glib, ResponseType, Widget, DrawingArea
 };
 use std::{cell::RefCell, fs, path::PathBuf, process::Command, rc::Rc};
@@ -316,6 +317,7 @@ fn setup_sound_switch(switch: &Switch) {
 }
 
 fn show_notification(notif_area: &GtkBox, text: &str) {
+    notif_area.set_visible(true);
     let notif_box = GtkBox::builder()
         .orientation(Orientation::Horizontal)
         .spacing(10)
@@ -336,8 +338,10 @@ fn show_notification(notif_area: &GtkBox, text: &str) {
         notif_box_clone.hide();
     });
 
+    let notiv_area_clone = notif_area.clone();
     let notif_box_clone2 = notif_box.clone();
     glib::timeout_add_local(std::time::Duration::from_secs(2), move || {
+        notiv_area_clone.set_visible(false);
         notif_box_clone2.hide();
         glib::ControlFlow::Break
     });
@@ -428,18 +432,12 @@ fn load_css() {
 
         headerbar {
             all: unset;
-            padding: 2px;
+            padding: 0px;
+            margin: 0px;
             background-color: rgba(34, 34, 34, 0);
-            border: 1px solid #fff;
-            box-shadow:
-                0 0 7px #fff,
-                0 0 10px #fff,
-                0 0 21px #fff,
-                0 0 42px #0fa,
-                0 0 82px #0fa,
-                0 0 92px #0fa,
-                0 0 102px #0fa,
-                0 0 151px #0fa;
+            border: 1px solid rgba(105, 255, 173, 0.29);
+            min-height: 0px;
+            box-shadow: none;
         }
 
         .label {
@@ -600,8 +598,9 @@ fn build_ui(app: &Application) {
     let window = ApplicationWindow::builder()
         .application(app)
         .title("Calibrate")
-        .default_width(1000)
-        .default_height(600)
+        .default_width(1500)
+        .default_height(700)
+        .resizable(false)
         .build();
 
     let main_box = GtkBox::builder().orientation(Orientation::Vertical).spacing(0).build();
@@ -611,28 +610,61 @@ fn build_ui(app: &Application) {
         .spacing(0)
         .build();
 
+    notif_area.set_visible(false);
+
     let home_dir = std::env::var("HOME").unwrap();
 
     // header ----------------------------------------------------------------------------------------------------------------------------------------- //
-    let header = HeaderBar::builder().build();
-    header.set_decoration_layout(Some(""));
-
-    let stack = Stack::builder().transition_type(gtk4::StackTransitionType::SlideLeftRight).build();
-    stack.add_titled(&Label::new(Some("Home Page")), Some("home"), "Home");
-
-    // home page --------------------------------------------------------------------------------------------------------------------------------------- //
+    let header_box = GtkBox::new(Orientation::Horizontal, 0);
+    header_box.set_hexpand(true);
+    header_box.set_halign(gtk4::Align::Fill);
+    
+    let scu_info = Label::new(Some("A Stertorus Cerebral Unit Software"));
+    scu_info.set_justify(gtk4::Justification::Left);
+    scu_info.set_halign(gtk4::Align::Start);
+    header_box.append(&scu_info);
 
     let hello = Label::new(Some(""));
     hello.set_justify(gtk4::Justification::Left);
     hello.set_halign(gtk4::Align::Start);
-    hello.set_hexpand(true);
-    hello.set_widget_name("hello");
-    header.set_title_widget(Some(&hello));
-    typing_effect(&hello, "Helllo !!", 150);
+    typing_effect(&hello, "Welcome USER.5", 150);
+    header_box.append(&hello);
 
-    let tabs_box = GtkBox::builder().orientation(Orientation::Horizontal).spacing(5).build();
+    let title = Label::new(Some("Calibrate - COS"));
+    title.set_justify(gtk4::Justification::Left);
+    title.set_halign(gtk4::Align::End);
+    header_box.append(&title);
+
+    let stack = Stack::builder().transition_type(gtk4::StackTransitionType::SlideLeftRight).build();
+    stack.add_titled(&Label::new(Some("Home Page")), Some("home"), "Home");
+
+    let stack_box = GtkBox::new(Orientation::Horizontal, 5);
+    stack_box.set_hexpand(true);
+    stack_box.set_vexpand(true);
+    let stack_tab_box = GtkBox::new(Orientation::Vertical, 5);
+
+    // Stack_tab_box  ---------------------------------------------------------------------------------------------------------------------------------- //
+    let stack = Stack::builder()
+        .transition_type(gtk4::StackTransitionType::SlideLeftRight)
+        .build();
+    stack.add_titled(&Label::new(Some("Home Page")), Some("home"), "Home");
+
+    let stack_box = GtkBox::new(Orientation::Horizontal, 5);
+    stack_box.set_hexpand(true);
+    stack_box.set_vexpand(true);
+
+    let tabs_box = GtkBox::builder()
+        .orientation(Orientation::Vertical)
+        .spacing(5)
+        .margin_top(20)
+        .margin_start(20)
+        .build();
+
+    let scu_logo = Picture::for_filename("scu.svg");
+    scu_logo.set_size_request(256, 156);
+    tabs_box.append(&scu_logo);
+
     let stack_weak = stack.downgrade();
-    let header_weak = header.downgrade();
     let tabs_box_clone = tabs_box.clone();
 
     let add_tab_button = |icon_name: &str, page_id: &str| {
@@ -642,25 +674,25 @@ fn build_ui(app: &Application) {
         button.set_child(Some(&image));
 
         let page_id_string = page_id.to_lowercase();
-        let tabs_box_clone = tabs_box_clone.clone();
         let stack_weak = stack_weak.clone();
-        let header_weak = header_weak.clone();
-        let hello_clone = hello.clone();
 
         button.connect_clicked(move |_| {
             if let Some(stack) = stack_weak.upgrade() {
                 stack.set_visible_child_name(&page_id_string);
             }
-            if let Some(header) = header_weak.upgrade() {
-                if page_id_string == "home" {
-                    header.set_title_widget(Some(&hello_clone));
-                } else {
-                    header.set_title_widget(Some(&tabs_box_clone));
-                }
-            }
         });
-        button
+
+        tabs_box_clone.append(&button);
     };
+
+    add_tab_button("go-home-symbolic", "home");
+    add_tab_button("preferences-desktop-wallpaper-symbolic", "wallpaper");
+    add_tab_button("settings-app-symbolic", "cynide");
+    add_tab_button("network-wired-acquiring-symbolic", "network");
+    add_tab_button("bluetooth-active-symbolic", "bluetooth");
+    add_tab_button("preferences-desktop-keyboard-shortcuts-symbolic", "keybindings");
+    add_tab_button("preferences-system-notifications-symbolic", "notifications");
+    add_tab_button("help-about-symbolic", "about");
 
     let mut row = 0;
     let mut col = 0;
@@ -685,23 +717,21 @@ fn build_ui(app: &Application) {
         .build();
 
     for (icon, page) in &buttons {
-        let button = add_tab_button(icon, page);
+        let button = Button::builder().tooltip_text(*page).build();
+        let image = Image::from_icon_name(icon);
+        image.set_pixel_size(48);
+        button.set_child(Some(&image));
         home_box.attach(&button, col, row, 1, 1);
         button.set_css_classes(&["home_btn"]);
-        if let Some(child) = button.child() {
-            if let Ok(image) = child.downcast::<Image>() {
-                image.set_pixel_size(48);
-            }
-        }
         col += 1;
         if col >= 4 { col = 0; row += 1; }
     }
 
-    tabs_box.append(&add_tab_button("go-home-symbolic", "home"));
-    for (icon, page) in &buttons { tabs_box.append(&add_tab_button(icon, page)); }
-
     stack.remove(&stack.child_by_name("home").unwrap());
     stack.add_titled(&home_box, Some("home"), "Home");
+
+    stack_box.append(&tabs_box);
+    stack_box.append(&stack);
 
      // Wallpaper page ---------------------------------------------------------------------------------------------------------------------------------- //
     let wallpaper_box = GtkBox::builder().orientation(Orientation::Vertical).spacing(0).build();
@@ -992,10 +1022,12 @@ fn build_ui(app: &Application) {
 
 
     // window ----------------------------------------------------------------------------------------------------------------------------------------- //
+    stack_box.append(&stack_tab_box);
+    stack_box.append(&stack);
 
+    main_box.append(&header_box);
     main_box.append(&notif_area);
-    main_box.append(&header);
-    main_box.append(&stack);
+    main_box.append(&stack_box);
     window.set_child(Some(&main_box));
     window.present();
 
