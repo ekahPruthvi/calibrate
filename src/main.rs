@@ -976,7 +976,7 @@ fn build_ui(app: &Application) {
                     }
                 }
                 stack.set_visible_child_name(&page_id_string);
-                typing_effect(&page_title_clone, &name_clone, 100);
+                typing_effect(&page_title_clone, &name_clone, 10);
             }
         });
 
@@ -1196,7 +1196,7 @@ fn build_ui(app: &Application) {
         button.connect_clicked(move |_| {
             if let Some(stack) = stack_weak.upgrade() {    
                 stack.set_visible_child_name(&page_id_string);
-                typing_effect(&page_title_clone, &page_name_clone, 50);
+                typing_effect(&page_title_clone, &page_name_clone, 10);
                 back_button_clone.set_visible(true);
             }
         });
@@ -1494,7 +1494,7 @@ BBBBB++++++++++++++++BBBBBB", "startup", "Shell configs >> Startup sound setting
     nm_edit_button.connect_clicked(move |_| {
         if let Some(stack) = stack_weak.upgrade() {    
             stack.set_visible_child_name("edit");
-            typing_effect(&page_title_clone_edit, "network settings >> edit saved connections", 50);
+            typing_effect(&page_title_clone_edit, "network settings >> edit saved connections", 10);
             back_button_clone.set_visible(true);
         }
     });
@@ -1525,12 +1525,12 @@ BBBBB++++++++++++++++BBBBBB", "startup", "Shell configs >> Startup sound setting
             match visible_name.as_str() {
                 "network" => {
                     net_stack_clone.set_visible_child_name("network List");
-                    typing_effect(&page_title_clone, "network", 100);
+                    typing_effect(&page_title_clone, "network", 10);
                     back_button_clone.set_visible(false);
                 }
                 "cynide" => {
                     shell_stack_clone_back.set_visible_child_name("shell_settings");
-                    typing_effect(&page_title_clone, "Shell Configs", 100);
+                    typing_effect(&page_title_clone, "Shell Configs", 10);
                     back_button_clone.set_visible(false);
                 }
                 _ => {
