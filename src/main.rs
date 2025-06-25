@@ -1,6 +1,6 @@
 use gtk4::{
-    prelude::*, Switch, Frame, Application, ApplicationWindow, Box as GtkBox, Button, Image, Label, Orientation, Stack, GestureDrag, 
-    Fixed, MessageDialog , gdk::Display , CssProvider, glib, ResponseType, Widget, DrawingArea
+    prelude::*, Switch, Frame, Application, ApplicationWindow, Box as GtkBox, Button, Image, Label, Orientation, Stack, GestureDrag,
+    Fixed, MessageDialog , gdk::Display , CssProvider, glib, ResponseType, Widget, DrawingArea, Dialog
 };
 use std::{cell::RefCell, fs, path::PathBuf, process::Command, rc::Rc};
 use std::collections::HashMap;
@@ -390,6 +390,135 @@ fn extract_current_selection(config_path: &str) -> Option<String> {
     None
 }
 
+pub fn list_wifi_networks_clickable(container: &GtkBox) {
+    let output = Command::new("nmcli")
+        .args(["-t", "-f", "IN-USE,SSID,SIGNAL", "dev", "wifi"])
+        .output()
+        .expect("Failed to run nmcli");
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+
+    while let Some(child) = container.first_child() {
+        container.remove(&child);
+    }
+
+    // Store buttons so we can later update their CSS classes
+    let buttons: Rc<RefCell<Vec<Button>>> = Rc::new(RefCell::new(Vec::new()));
+
+    for line in stdout.lines() {
+        let parts: Vec<&str> = line.split(':').collect();
+        if parts.len() != 3 {
+            continue;
+        }
+
+        let in_use = parts[0].trim();
+        let ssid = parts[1].trim();
+        let signal: u32 = parts[2].trim().parse().unwrap_or(0);
+
+        if ssid.is_empty() {
+            continue;
+        }
+
+        let bars = match signal {
+            75..=100 => "████",
+            50..=74 => "███",
+            25..=49 => "██",
+            1..=24 => "█",
+            _ => "",
+        };
+
+        let label_text = Label::new(Some(&ssid));
+        label_text.set_hexpand(true);
+        label_text.set_halign(gtk4::Align::Start);
+        let label_bars = Label::new(Some(&bars));
+        label_bars.set_hexpand(true);
+        label_bars.set_halign(gtk4::Align::End);
+        let label_box = GtkBox::new(Orientation::Horizontal, 0);
+        label_box.set_hexpand(true);
+        label_box.append(&label_text);
+        label_box.append(&label_bars);
+        
+        let btn = Button::builder().child(&label_box).build();
+        btn.set_hexpand(true);
+        btn.set_halign(gtk4::Align::Fill);
+
+        if in_use == "*" {
+            btn.add_css_class("connected");
+            label_text.set_css_classes(&["network_label"]);
+            label_bars.set_css_classes(&["network_label"]);
+        }
+
+        let ssid_cloned = ssid.to_string();
+        let btn_cloned = btn.clone();
+        let buttons_ref = Rc::clone(&buttons);
+
+        btn.connect_clicked(move |_| {
+            let result = Command::new("nmcli")
+                .args(["dev", "wifi", "connect", &ssid_cloned, "--ask"])
+                .output()
+                .expect("Failed to run nmcli connect");
+
+            let (title, msg) = if result.status.success() {
+                ("Connected", format!("Successfully connected to \"{}\".", ssid_cloned))
+            } else {
+                (
+                    "Connection Failed",
+                    format!(
+                        "Failed to connect to \"{}\":\n{}",
+                        ssid_cloned,
+                        String::from_utf8_lossy(&result.stderr)
+                    ),
+                )
+            };
+
+            // Find the top-level window
+            let parent_win = btn_cloned
+                .root()
+                .and_then(|w| w.downcast::<ApplicationWindow>().ok())
+                .unwrap();
+
+            let dialog = Dialog::builder()
+                .transient_for(&parent_win)
+                .modal(true)
+                .title(title)
+                .build();
+
+            dialog.content_area().append(&Label::new(Some(&msg)));
+            dialog.add_button("OK", ResponseType::Ok);
+            dialog.connect_response(move |d, _| {
+                d.close();
+            });
+            dialog.show();
+
+            // If success, update CSS classes
+            if result.status.success() {
+                for b in buttons_ref.borrow().iter() {
+                    b.remove_css_class("connected");
+                    label_text.remove_css_class("network_label");
+                    label_text.remove_css_class("network_label");
+                }
+                btn_cloned.add_css_class("connected");
+            }
+        });
+
+        container.append(&btn);
+        buttons.borrow_mut().push(btn);
+    }
+}
+
+fn gett_wifi_status() -> bool {
+    let output = Command::new("nmcli")
+        .args(["radio", "wifi"])
+        .output()
+        .expect("Failed to get Wi-Fi status");
+    String::from_utf8_lossy(&output.stdout).trim() == "enabled"
+}
+
+fn sett_wifi_status(enabled: bool) {
+    let _ = Command::new("nmcli")
+        .args(["radio", "wifi", if enabled { "on" } else { "off" }])
+        .output();
+}
 
 fn load_css() {
     let csss = r#"
@@ -436,9 +565,10 @@ fn load_css() {
             padding: 0px;
         }
 
-        .label {
-            color: black;
-            font-size: 16px;
+
+        .network_label {
+            color: rgb(2, 71, 59);
+            letter-spacing: 2px;
         }
 
         button {
@@ -470,6 +600,10 @@ fn load_css() {
             background-color: rgba(59, 59, 59, 0.31);
             box-shadow: 0 0 20px 1px rgba(0, 0, 0, 0.63);
 
+        }
+
+        button.connected {
+            background-color: rgb(5, 148, 122);
         }
 
         box {
@@ -1146,12 +1280,6 @@ BBBBB++++++++++++++++BBBBBB", "startup", "Shell configs >> Startup sound setting
 
     let shell_stack_clone_back: Stack = shell_stack.clone();
     let page_title_clone = page_title.clone();
-    let back_button_clone = back_button.clone();
-    back_button.connect_clicked(move |_| {
-        shell_stack_clone_back.set_visible_child_name("shell_settings");
-        typing_effect(&page_title_clone, "shell configs", 100);
-        back_button_clone.set_visible(false);
-    });
 
     shell_settings_scroller.set_child(Some(&shell_settings_box));
     shell_stack.add_titled(&shell_settings_scroller, Some("shell_settings"), "cynide shell settings");
@@ -1321,7 +1449,97 @@ BBBBB++++++++++++++++BBBBBB", "startup", "Shell configs >> Startup sound setting
 
     stack.add_titled(&shell_stack, Some("cynide"), "Cynide Settings");
 
+    // network settings ------------------------------------------------------------------------------------------------------------------------------- //
+    let net_stack = Stack::new();
+    
+    let network_home = GtkBox::new(Orientation::Vertical, 0);
+    network_home.set_hexpand(true);
+    network_home.set_vexpand(true);
+
+    let nm_list_scroller = gtk4::ScrolledWindow::builder()
+        .min_content_height(150)
+        .hscrollbar_policy(gtk4::PolicyType::Never)
+        .vscrollbar_policy(gtk4::PolicyType::Automatic)
+        .hexpand(true)
+        .vexpand(true)
+        .build();
+
+    let network_list = GtkBox::new(Orientation::Vertical, 0);
+    network_list.set_hexpand(true);
+    network_list.set_vexpand(true);
+    list_wifi_networks_clickable(&network_list);
+    nm_list_scroller.set_child(Some(&network_list));
+    nm_list_scroller.set_css_classes(&["display_win"]);
+
+    let nm_toggle = Switch::new();
+    nm_toggle.set_halign(gtk4::Align::End);
+    nm_toggle.set_hexpand(true);
+    nm_toggle.set_active(gett_wifi_status());
+
+    nm_toggle.connect_state_set(move |_, state| {
+        sett_wifi_status(state);
+        glib::Propagation::Proceed
+    });
+
+    let nm_ctrl = GtkBox::new(Orientation::Horizontal, 5);
+    nm_ctrl.set_hexpand(true);
+    nm_ctrl.set_halign(gtk4::Align::Fill);
+    let nm_edit_button = Button::with_label("Edit Saved Connections");
+    nm_edit_button.set_halign(gtk4::Align::Start);
+    nm_edit_button.set_hexpand(true);
+    let page_title_clone_edit = page_title.clone();
+    let back_button_clone = back_button.clone();  
+    let stack_weak = net_stack.downgrade(); 
+    
+    nm_edit_button.connect_clicked(move |_| {
+        if let Some(stack) = stack_weak.upgrade() {    
+            stack.set_visible_child_name("edit");
+            typing_effect(&page_title_clone_edit, "network settings >> edit saved connections", 50);
+            back_button_clone.set_visible(true);
+        }
+    });
+    
+
+    nm_ctrl.append(&nm_edit_button);
+    nm_ctrl.append(&nm_toggle);
+
+    network_home.append(&nm_ctrl);
+    network_home.append(&nm_list_scroller);
+
+    // edit page
+    let network_edit = GtkBox::new(Orientation::Vertical, 5);
+    network_edit.append(&Label::new(Some("edit page")));
+
+    // main stack
+    net_stack.add_titled(&network_home, Some("network List"), "Network lsit");
+    net_stack.add_titled(&network_edit, Some("edit"), "Edit Saved");
+
+    stack.add_titled(&net_stack, Some("network"), "network settings");
+
     // window ----------------------------------------------------------------------------------------------------------------------------------------- //
+    let back_button_clone = back_button.clone();
+    let stack_clone = stack.clone();
+    let net_stack_clone = net_stack.clone();
+    back_button.connect_clicked(move |_| {
+        if let Some(visible_name) = stack_clone.visible_child_name() {
+            match visible_name.as_str() {
+                "network" => {
+                    net_stack_clone.set_visible_child_name("network List");
+                    typing_effect(&page_title_clone, "network", 100);
+                    back_button_clone.set_visible(false);
+                }
+                "cynide" => {
+                    shell_stack_clone_back.set_visible_child_name("shell_settings");
+                    typing_effect(&page_title_clone, "Shell Configs", 100);
+                    back_button_clone.set_visible(false);
+                }
+                _ => {
+                    // default fallback, or hide back button
+                    back_button_clone.set_visible(false);
+                }
+            }
+        }
+    });
 
     main_box.append(&header_box);
     main_box.append(&stack_box);
