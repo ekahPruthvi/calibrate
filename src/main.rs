@@ -611,7 +611,7 @@ fn load_css() {
         label.display {
             font-size: 2px;
             letter-spacing: 0px;
-            line-height: 0.9;
+            line-height: 1;
             padding: 0;
             margin-top: 10px;
         } 
@@ -634,7 +634,7 @@ fn load_css() {
 
         label.calibrate {
             font-size: 18px;
-            padding: 5;
+            padding: 5px;
             margin: 5px;
         } 
 
@@ -727,50 +727,6 @@ fn build_ui(app: &Application) {
         .margin_start(20)
         .build();
 
-
-    let back_button = Button::with_label("<< Back");
-    back_button.set_visible(false);
-    tabs_box.append(&back_button);
-
-    let scu_logo = Image::from_icon_name("scu");
-    scu_logo.set_pixel_size(246);
-    tabs_box.append(&scu_logo);
-
-    let stack_weak = stack.downgrade();
-    let tabs_box_clone = tabs_box.clone();
-
-    let add_tab_button = |name: &str, page_id: &str| {
-        let button = Button::builder().build();
-        let image = Label::new(Some(&name));
-        image.set_justify(gtk4::Justification::Left);
-        image.set_halign(gtk4::Align::Start);
-        button.set_child(Some(&image));
-
-        let page_id_string = page_id.to_lowercase();
-        let stack_weak = stack_weak.clone();
-        let page_title_clone = page_title.clone();
-        let name_clone = name.to_lowercase();
-
-        button.connect_clicked(move |_| {
-            if let Some(stack) = stack_weak.upgrade() {
-                stack.set_visible_child_name(&page_id_string);
-                typing_effect(&page_title_clone, &name_clone, 100);
-            }
-        });
-
-        tabs_box_clone.append(&button);
-    };
-
-    add_tab_button("Home", "home");
-    add_tab_button("Wallpapers", "wallpaper");
-    add_tab_button("Shell configs", "cynide");
-    add_tab_button("Network", "network");
-    add_tab_button("Bluetooth", "bluetooth");
-    add_tab_button("Show Keybindings", "keybindings");
-    add_tab_button("Notification History", "notifications");
-    add_tab_button("About", "about");
-
-
     let home_box = gtk4::Grid::builder()
         .row_spacing(2)
         .column_spacing(2)
@@ -786,32 +742,37 @@ fn build_ui(app: &Application) {
     home_box.set_hexpand(true);
     home_box.set_vexpand(true);
     home_box.set_css_classes(&["home_page"]);
-     
-    let eye = Label::new(Some("
-⣿⡟⢠⣿⣯⠦⢀⡀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢀⡀⠀⠀⠀⠀⠀⠈⠂⠀⠀⠀⠀⠀⠀⠀⠑⠐⠀⠀⠀⠀⠀⠀⠸⡀ \n
-⣿⢇⡿⣭⡦⠗⠁⠄⠂⠀⠀⠀⠀⠀⡠⣰⢀⠀⠀⠀⢰⠋⡆⢀⢠⠀⠀⠀⠀⠀⠐⢆⠀⢂⠀⠀⠀⠀⠀⠀⠀⠀⠀⠂⠀⠁⠀\n
-⣟⠘⣼⣎⠕⠊⠁⠀⠀⠀⢢⠆⡀⠬⡑⢿⣻⡆⠀⡀⡄⠄⣧⢸⡈⢀⠀⡆⢠⠀⠀⠀⠁⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀\n
-⡇⠸⡩⡠⡔⢱⢀⠰⣄⠔⠁⣻⣢⢙⣿⣼⣿⣷⠴⠿⣿⡗⣟⣿⡿⣷⣾⣤⣼⣄⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀\n
-⠁⠈⠔⢱⢌⢿⢢⠑⠻⣗⠎⣀⣿⣟⢛⣍⣯⣿⣧⣤⣿⣧⣿⣿⣵⣾⣿⣎⡹⠿⣿⣶⣄⡀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀\n
-⠀⠀⠀⠀⢾⢱⣷⣷⡢⢾⣷⢯⣽⣽⣿⣿⠿⣿⣛⡿⠯⠿⠿⠿⡿⠿⣿⣿⣿⣿⣿⣿⣽⣟⣦⡀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀\n
-⠀⠀⢀⠑⢬⣧⣻⣽⣽⣿⣿⣿⣿⢟⣻⠟⠋⠁⠀⠀⠀⠀⠀⠀⠀⠀⠈⠉⠛⠿⣽⢿⡙⢿⣿⣿⣇⡀⠀⠀⠀⠀⠀⠀⠀⠀⠀\n
-⠀⠀⠈⠳⢜⢿⣿⣿⢿⣿⣿⡿⣩⠋⠄⠀⠀⠀⠀⠀⣀⣠⣤⣤⣤⣤⣄⡀⠀⠀⠈⠻⣮⡟⠙⠹⣿⣷⡀⠀⠀⠀⠀⠀⠀⠀⠀\n
-⠀⠀⢀⢀⡀⠉⢟⡻⢛⣿⠿⡷⠁⠀⠀⠀⠀⢀⣴⣿⣿⣿⣿⣿⣿⣿⣿⣿⣦⡀⠀⠀⠹⣿⣷⣦⣱⣿⣿⣄⠀⠀⠀⠀⠀⠀⠀\n
-⠀⠀⠀⠉⠚⣋⠶⣋⡵⢏⣰⠁⠀⠀⠀⠀⢠⣾⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣷⠀⠀⠀⠈⢿⣿⣿⣿⣿⣿⣦⡀⠀⠀⠀⠀⠀\n
-⠀⠀⠀⢬⣷⣶⣽⣿⣦⡉⢡⠀⠀⠀⠀⠀⣾⣷⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⠀⠀⠀⠀⠀⠹⣿⣿⣿⣿⣿⣿⣷⢄⡀⠀⠀\n
-⠀⠀⠀⡨⠟⠉⠉⣉⠻⣿⡌⢆⠀⠀⠀⠀⢻⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⡇⠀⠀⠀⠀⠀⢔⣿⣽⣿⣿⣿⣿⣿⣤⠑⢶⡄\n
-⠀⠀⠐⠁⠀⢠⡪⠒⣚⣻⣶⣄⠳⣠⠀⠀⠈⢻⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⡿⠁⠀⠀⠀⠀⠐⣾⣿⣿⣿⣿⣿⣿⣿⣿⣱⣼⣯\n
-⠀⠀⠀⢀⣔⢡⡴⢛⣳⡼⠿⢿⣧⣬⣑⠤⣀⡀⠉⠻⢿⣿⣿⣿⣿⣿⠟⠋⠀⠀⠀⣀⣀⣤⣾⣿⣿⣿⡿⣿⣿⠿⠿⢿⢿⡿⠠\n
-⠀⠀⠀⠉⠊⡝⠨⠋⠀⢀⡤⣾⣟⡻⣿⢷⣶⣬⣭⣐⣤⣄⢀⣈⣀⠀⡠⢄⡦⣤⡛⠩⣿⢛⣻⢿⢛⡼⠾⠝⡅⠭⠪⠴⠋⠀⠀\n
-⠀⠀⠀⠀⠀⠀⠀⢠⠖⢛⢜⡩⠔⠋⣉⢔⠟⢪⡿⣫⠛⢿⣿⣿⡧⠉⣿⠎⠺⣾⠁⠃⣻⠑⠠⠂⠑⢒⢁⠤⠐⡄⠉⠀⠀⠀⠀\n
-⠀⠀⠀⠀⠀⠀⠐⠁⠀⠉⠁⠀⠀⣪⠼⠃⢠⠿⠈⢼⢀⣾⠯⢿⠂⢑⢸⠢⠂⠃⠀⠀⠐⡘⠄⢠⠔⠓⢙⡥⠋⠀⠀⠀⠀⠀⠀\n
-⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠈⠀⠀⠀⠉⠀⠀⠇⠀⠃⠀⠘⢀⢉⠁⢀⢀⠀⡀⠀⠀⢔⠺⢽⠪⠈⠀⠀⠀⠀⠀⠀⠀⠀⠀\n
-⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠉⠀⠀⡀⢀⡅⠤⠀⠈⢤⠐⠆⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀\n
-⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⡐⠈⠰⠓⢀⠄⠇⠺⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀\n
-⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢀⠀⠀⠀⠀⠁⠀⠀⠀⠴⠠⠀⠂⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀"));
-    eye.set_css_classes(&["eye"]);
 
-    let eye_penglin = Label::new(Some("@@@@@%%%%%%%%%####********+++++++++++++++++++******########%%%%%%%%%%%%%%%%%%%%%%%%%##%######
+   
+
+
+    let back_button = Button::with_label("<< Back");
+    back_button.set_visible(false);
+    tabs_box.append(&back_button);
+
+    let scu_logo = Image::from_icon_name("scu");
+    scu_logo.set_pixel_size(246);
+    tabs_box.append(&scu_logo);
+
+    let stack_weak = stack.downgrade();
+    let tabs_box_clone = tabs_box.clone();
+    let egg_counter = Rc::new(RefCell::new(0));
+
+    let add_tab_button = |name: &str, page_id: &str| {
+        let button = Button::builder().build();
+        let image = Label::new(Some(&name));
+        image.set_justify(gtk4::Justification::Left);
+        image.set_halign(gtk4::Align::Start);
+        button.set_child(Some(&image));
+
+        let page_id_string = page_id.to_lowercase();
+        let stack_weak = stack_weak.clone();
+        let page_title_clone = page_title.clone();
+        let name_clone = name.to_lowercase();
+        let egg_counter_clone = egg_counter.clone();
+        let home_blox_outer_clone = home_box.clone();
+
+        let eye_penglin = Label::new(Some("@@@@@%%%%%%%%%####********+++++++++++++++++++******########%%%%%%%%%%%%%%%%%%%%%%%%%##%######
 @@@@@@@%%%####************++++++++++++++++++++++******########%%%%%%%%%%%%%%%%%%%%%%%#%######
 @@@@%%%%%%%%####*********++++++++++++++++++++++++*******########%%%#%%%%%%%%%%%%%%%%%%#######
 @@@@%%%%%%#####***********+*+++++++++++++++++++++*++******#*########%%%%%%%%%%%%%%%%%%#######
@@ -866,7 +827,62 @@ fn build_ui(app: &Application) {
 ***+++++++++++++++===================================-=-=-===----=====+=+++**##%%%###########
 ****++++++++++++++=====+===========================-=-=-==---==--===++++=+**##%%%%###########
 **++++++++*+++======+=++===============================----=-=--=====++++**##%%%%############"));
-    eye_penglin.set_css_classes(&["eye2"]);
+        eye_penglin.set_css_classes(&["eye2"]);
+
+        button.connect_clicked(move |_| {
+            if let Some(stack) = stack_weak.upgrade() {
+                if page_id_string == "wallpaper" {
+                    let mut counter = egg_counter_clone.borrow_mut();
+                    *counter += 1;
+                    if *counter == 5 {
+                        eprintln!("\n\n\n\n\n\n\n\nit's 5 ---------------------------------");
+                    } else if *counter == 7 {
+                        eprintln!("7 7 2005 huh?");
+                        home_blox_outer_clone.attach(&eye_penglin, 0, 0, 2, 2);
+                    }
+                }
+                stack.set_visible_child_name(&page_id_string);
+                typing_effect(&page_title_clone, &name_clone, 100);
+            }
+        });
+
+        tabs_box_clone.append(&button);
+    };
+
+    add_tab_button("Home", "home");
+    add_tab_button("Wallpapers", "wallpaper");
+    add_tab_button("Shell configs", "cynide");
+    add_tab_button("Network", "network");
+    add_tab_button("Bluetooth", "bluetooth");
+    add_tab_button("Show Keybindings", "keybindings");
+    add_tab_button("Notification History", "notifications");
+    add_tab_button("About", "about");
+
+     
+    let eye = Label::new(Some("
+⣿⡟⢠⣿⣯⠦⢀⡀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢀⡀⠀⠀⠀⠀⠀⠈⠂⠀⠀⠀⠀⠀⠀⠀⠑⠐⠀⠀⠀⠀⠀⠀⠸⡀ \n
+⣿⢇⡿⣭⡦⠗⠁⠄⠂⠀⠀⠀⠀⠀⡠⣰⢀⠀⠀⠀⢰⠋⡆⢀⢠⠀⠀⠀⠀⠀⠐⢆⠀⢂⠀⠀⠀⠀⠀⠀⠀⠀⠀⠂⠀⠁⠀\n
+⣟⠘⣼⣎⠕⠊⠁⠀⠀⠀⢢⠆⡀⠬⡑⢿⣻⡆⠀⡀⡄⠄⣧⢸⡈⢀⠀⡆⢠⠀⠀⠀⠁⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀\n
+⡇⠸⡩⡠⡔⢱⢀⠰⣄⠔⠁⣻⣢⢙⣿⣼⣿⣷⠴⠿⣿⡗⣟⣿⡿⣷⣾⣤⣼⣄⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀\n
+⠁⠈⠔⢱⢌⢿⢢⠑⠻⣗⠎⣀⣿⣟⢛⣍⣯⣿⣧⣤⣿⣧⣿⣿⣵⣾⣿⣎⡹⠿⣿⣶⣄⡀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀\n
+⠀⠀⠀⠀⢾⢱⣷⣷⡢⢾⣷⢯⣽⣽⣿⣿⠿⣿⣛⡿⠯⠿⠿⠿⡿⠿⣿⣿⣿⣿⣿⣿⣽⣟⣦⡀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀\n
+⠀⠀⢀⠑⢬⣧⣻⣽⣽⣿⣿⣿⣿⢟⣻⠟⠋⠁⠀⠀⠀⠀⠀⠀⠀⠀⠈⠉⠛⠿⣽⢿⡙⢿⣿⣿⣇⡀⠀⠀⠀⠀⠀⠀⠀⠀⠀\n
+⠀⠀⠈⠳⢜⢿⣿⣿⢿⣿⣿⡿⣩⠋⠄⠀⠀⠀⠀⠀⣀⣠⣤⣤⣤⣤⣄⡀⠀⠀⠈⠻⣮⡟⠙⠹⣿⣷⡀⠀⠀⠀⠀⠀⠀⠀⠀\n
+⠀⠀⢀⢀⡀⠉⢟⡻⢛⣿⠿⡷⠁⠀⠀⠀⠀⢀⣴⣿⣿⣿⣿⣿⣿⣿⣿⣿⣦⡀⠀⠀⠹⣿⣷⣦⣱⣿⣿⣄⠀⠀⠀⠀⠀⠀⠀\n
+⠀⠀⠀⠉⠚⣋⠶⣋⡵⢏⣰⠁⠀⠀⠀⠀⢠⣾⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣷⠀⠀⠀⠈⢿⣿⣿⣿⣿⣿⣦⡀⠀⠀⠀⠀⠀\n
+⠀⠀⠀⢬⣷⣶⣽⣿⣦⡉⢡⠀⠀⠀⠀⠀⣾⣷⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⠀⠀⠀⠀⠀⠹⣿⣿⣿⣿⣿⣿⣷⢄⡀⠀⠀\n
+⠀⠀⠀⡨⠟⠉⠉⣉⠻⣿⡌⢆⠀⠀⠀⠀⢻⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⡇⠀⠀⠀⠀⠀⢔⣿⣽⣿⣿⣿⣿⣿⣤⠑⢶⡄\n
+⠀⠀⠐⠁⠀⢠⡪⠒⣚⣻⣶⣄⠳⣠⠀⠀⠈⢻⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⡿⠁⠀⠀⠀⠀⠐⣾⣿⣿⣿⣿⣿⣿⣿⣿⣱⣼⣯\n
+⠀⠀⠀⢀⣔⢡⡴⢛⣳⡼⠿⢿⣧⣬⣑⠤⣀⡀⠉⠻⢿⣿⣿⣿⣿⣿⠟⠋⠀⠀⠀⣀⣀⣤⣾⣿⣿⣿⡿⣿⣿⠿⠿⢿⢿⡿⠠\n
+⠀⠀⠀⠉⠊⡝⠨⠋⠀⢀⡤⣾⣟⡻⣿⢷⣶⣬⣭⣐⣤⣄⢀⣈⣀⠀⡠⢄⡦⣤⡛⠩⣿⢛⣻⢿⢛⡼⠾⠝⡅⠭⠪⠴⠋⠀⠀\n
+⠀⠀⠀⠀⠀⠀⠀⢠⠖⢛⢜⡩⠔⠋⣉⢔⠟⢪⡿⣫⠛⢿⣿⣿⡧⠉⣿⠎⠺⣾⠁⠃⣻⠑⠠⠂⠑⢒⢁⠤⠐⡄⠉⠀⠀⠀⠀\n
+⠀⠀⠀⠀⠀⠀⠐⠁⠀⠉⠁⠀⠀⣪⠼⠃⢠⠿⠈⢼⢀⣾⠯⢿⠂⢑⢸⠢⠂⠃⠀⠀⠐⡘⠄⢠⠔⠓⢙⡥⠋⠀⠀⠀⠀⠀⠀\n
+⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠈⠀⠀⠀⠉⠀⠀⠇⠀⠃⠀⠘⢀⢉⠁⢀⢀⠀⡀⠀⠀⢔⠺⢽⠪⠈⠀⠀⠀⠀⠀⠀⠀⠀⠀\n
+⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠉⠀⠀⡀⢀⡅⠤⠀⠈⢤⠐⠆⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀\n
+⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⡐⠈⠰⠓⢀⠄⠇⠺⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀\n
+⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢀⠀⠀⠀⠀⠁⠀⠀⠀⠴⠠⠀⠂⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀"));
+    eye.set_css_classes(&["eye"]);
+    eye.is_selectable();
 
     let calibrate = Label::new(Some("Calibrate for cynageOS"));
     calibrate.set_css_classes(&["calibrate"]);
@@ -1028,6 +1044,8 @@ fn build_ui(app: &Application) {
         let btn_box = GtkBox::new(Orientation::Vertical, 2);
         let image = Label::new(Some(&icon_ascii));
         image.set_css_classes(&[page_id]);
+        image.set_vexpand(true);
+        image.set_valign(gtk4::Align::Baseline);
         let label = Label::new(Some(&page_id));
 
         btn_box.append(&label);
@@ -1055,12 +1073,12 @@ fn build_ui(app: &Application) {
 
     add_shell_button("
                                        ▓▓▓▓▓▓                                          
-                                    ▓▓▓▓░░░░░░▓▓▓▓                                      
-                                ▓▓▓▓░░░░░░░░░░░░▒▒▓▓██                                  
-                            ▓▓▓▓░░░░░░░░░░░░░░░░░▒▒▒▒▒▒██                              
-                        ████░░░░░░░░░░░░░░░░░░░░░░░░░░░░▒▒██                            
-                    ████░░░░░░░░░░░░░░░░░░░░░░░░░░░░▒▒▒▒░░░░██                          
-                ▓▓▓▓░░░░░░░░░░░░░░░░░░░░░░░░░░░░▒▒░░░░░░░░░░░░██                        
+                                    ▓▓▓▓░░░░░▓▓▓▓▓                                      
+                                ▓▓▓▓░░░░░░░░░░░░▒▒████                                  
+                            ▓▓▓▓░░░░░░░░░░░░░░░░░▒▒▒▒▒████                              
+                        ████░░░░░░░░░░░░░░░░░░░░░░░░░░░░▒▒████                            
+                    ████░░░░░░░░░░░░░░░░░░░░░░░░░░░░▒▒▒▒░░░░██▓▓                          
+                ▓▓▓▓░░░░░░░░░░░░░░░░░░░░░░░░░░░░▒▒░░░░░░░░░░░░██▓▓                        
             ██▓▓░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░▓▓▓▓░░░░░░░░░░██                      
         ████░░░░░░░░░░░░░░░░░░░░░░░░░░░░▒▒▒▒▒▒████▓▓▓▓██░░░░░░░░██                      
       ██░░░░░░░░░░░░░░░░░░░░░░░░░░░░▒▒▒▒░░████▓▓▓▓▓▓▓▓██░░░░██░░██                      
