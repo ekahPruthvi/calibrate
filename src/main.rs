@@ -524,18 +524,12 @@ fn load_css() {
     let csss = r#"
         *{
             font-family: "BigBlueTerm437 Nerd Font";
-            /*
-            text-shadow:
-                0 0 7px #fff,
-                0 0 10px #fff,
-                0 0 52px rgba(232, 255, 227, 0.64); */
-            
             color: rgb(5, 117, 97);
         }
 
         window {
             background-color: rgba(30, 30, 30, 0.76);
-            border-radius: 13px;
+            border-radius: 15px;
             box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
             border: 1px solid rgba(255, 255, 255, 0.1);
             color: white;
