@@ -19,6 +19,17 @@ struct MonitorInfo {
 const SCALE: f64 = 0.1;
 const SNAP_SIZE: i32 = 50; 
 
+fn add_class_recursive (widget: &gtk4::Widget, class_name: &str) {
+    widget.add_css_class(class_name);
+
+    let mut child = widget.first_child();
+    while let Some(current) = child {
+        add_class_recursive(&current, class_name);
+        child = current.next_sibling();
+    }
+
+}
+
 fn typing_effect(label: &Label, text: &str, delay_ms: u64) {
     let label = label.clone();
     let chars: Vec<char> = text.chars().collect();
@@ -772,18 +783,32 @@ fn load_css() {
             padding: 10px;
         }
 
-        #wall-dialog {
-            background-color: #1e1e1e;
+        .wall-dialog filechooser {
+            all: unset;
+            background-color:rgba(32, 32, 32, 0.62);
             border: 2px solid #888;
             border-radius: 15px;
             padding: 0px;
+            margin: 0px;
         }
 
-        #wall-dialog button {
-            background-color: #333;
-            color: #fff;
+        .wall-dialog {
+            all:unset;
+            padding: 5px;
+            margin: 1px;
         }
-        
+
+        .wall-dialog pathbarbox {
+            padding: 0px;
+            margin: 0px;
+        }
+
+        .wall-dialog box {
+            all:unset;
+            padding: 5px;
+            margin: 0px;
+        }
+
     "#;
 
     let provider = CssProvider::new();
@@ -1193,12 +1218,14 @@ fn build_ui(app: &Application) {
         let notif_box_clone = notif_box_clone.clone();
         let curren_pic_ref_clone = current_pic_ref.clone();
         let dialog = FileChooserDialog::new(
-            Some("Choose a wallpaper"),
+            Some("Select wallpaper to add"),
             Some(&window_clone),
             FileChooserAction::Open,
             &[("_Cancel", ResponseType::Cancel), ("_Add", ResponseType::Accept)],
         );
-        dialog.set_widget_name("wall-dialog");
+        dialog.set_css_classes(&["wall-dialog"]);
+        dialog.set_size_request(400, 800);
+        add_class_recursive(&dialog.upcast_ref(), "wall-dialog");
 
         let image_grid_inner = image_grid_clone.clone();
         dialog.connect_response(move |dialog, response| {
@@ -1224,13 +1251,14 @@ fn build_ui(app: &Application) {
         let notif_box_clone2 = notif_box_clone2.clone();
         let curren_pic_ref_clone2 = current_pic_ref2.clone();
         let dialog = FileChooserDialog::new(
-            Some("Choose wallpaper to remove"),
+            Some("Select wallpaper to remove"),
             Some(&window_clone2),
             FileChooserAction::Open,
             &[("_Cancel", ResponseType::Cancel), ("_Remove", ResponseType::Accept)],
         );
-
-        dialog.set_widget_name("wall-dialog");
+        dialog.set_css_classes(&["wall-dialog"]);
+        dialog.set_size_request(400, 800);
+        add_class_recursive(&dialog.upcast_ref(), "wall-dialog");
 
         let image_grid_inner = image_grid_clone.clone();
         if let Some(home_dir) = std::env::var_os("HOME") {
