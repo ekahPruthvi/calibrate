@@ -1,6 +1,7 @@
+use gtk4::glib::Propagation;
 use gtk4::{
     prelude::*, Switch, Frame, Application, ApplicationWindow, Box as GtkBox, Button, Image, Label, Orientation, Stack, GestureDrag,
-    Fixed, MessageDialog , gdk::Display , CssProvider, glib, ResponseType, Widget, DrawingArea, Dialog, FileChooserDialog, FileChooserAction
+    Fixed, MessageDialog , gdk::Display , CssProvider, glib, ResponseType, Widget, DrawingArea, Dialog, FileChooserDialog, FileChooserAction, gdk
 };
 use std::{cell::RefCell, fs, path::PathBuf, process::Command, rc::Rc};
 use std::collections::HashMap;
@@ -96,13 +97,22 @@ fn load_monitoors(fixed: &Fixed) -> HashMap<String, MonitorInfo> {
         let frame = Frame::builder()
             .width_request((width as f64 * SCALE) as i32)
             .height_request((height as f64 * SCALE) as i32)
+            .can_focus(true)
+            .focusable(true)
             .build();
+
+        let click = gtk4::GestureClick::new();
+        let frame_clone = frame.clone();
+        click.connect_pressed(move |_, _, _, _| {
+            frame_clone.grab_focus();
+        });
+        frame.add_controller(click);
 
         frame.set_child(Some(&Label::new(Some(name))));
 
         fixed.put(&frame, pos_x as f64 * SCALE, pos_y as f64 * SCALE);
 
-        enable_dragging(&frame, fixed);
+       enable_key_movement(&frame, fixed);
 
         monitors.insert(
             name.to_string(),
@@ -113,114 +123,82 @@ fn load_monitoors(fixed: &Fixed) -> HashMap<String, MonitorInfo> {
     monitors
 }
 
-fn enable_dragging(frame: &Frame, fixed: &Fixed) {
-    let start_offset = Rc::new(RefCell::new((0.0, 0.0)));
-    let grid_lines = Rc::new(RefCell::new(Vec::new()));
+fn enable_key_movement(frame: &Frame, fixed: &Fixed) {
+    frame.set_focusable(true);
+    frame.set_can_focus(true);
 
-    let drag = GestureDrag::new();
-    drag.set_button(0); // allow any button
+    let fixed = fixed.clone();
+    let frame_clone = frame.clone();
 
-    drag.connect_drag_begin({
-        let frame = frame.clone();
+    let wer_x = Rc::new(RefCell::new(0.0));
+    let wer_y = Rc::new(RefCell::new(0.0));
+
+    let key_ctrl = gtk4::EventControllerKey::new();
+
+    {
+        let wer_x = wer_x.clone();
+        let wer_y = wer_y.clone();
+        let frame_clone = frame_clone.clone();
         let fixed = fixed.clone();
-        let start_offset = start_offset.clone();
-        let grid_lines = grid_lines.clone();
 
-        move |_gesture, start_x, start_y| {
-            // Set dragging cursor
-            frame.set_cursor_from_name(Some("grab"));
-
-            let frame_widget: &Widget = frame.as_ref();
-            let fixed_widget: &Widget = fixed.as_ref();
-            if let Some((fx, fy)) = frame_widget.translate_coordinates(fixed_widget, 0.0, 0.0) {
-                start_offset.replace((fx - start_x, fy - start_y));
-            }
-
-            // Draw snap grid
+        key_ctrl.connect_key_pressed(move |_, keyval,_, state|{
             let parent_alloc = fixed.allocation();
-            let mut lines = Vec::new();
+            let frame_width = frame_clone.width();
+            let frame_height = frame_clone.height();
 
-            for x in (0..parent_alloc.width()).step_by((SNAP_SIZE as f64 * SCALE) as usize) {
-                let l = DrawingArea::builder()
-                    .width_request(1)
-                    .height_request(parent_alloc.height())
-                    .css_classes(vec!["grid-line"])
-                    .build();
-                fixed.put(&l, x as f64, 0.0);
-                l.show();
-                lines.push(l);
+            let mut new_x = *wer_x.borrow();
+            let mut new_y = *wer_y.borrow();
+
+            match keyval {
+                gtk4::gdk::Key::Up => {
+                    if state.contains(gdk::ModifierType::SHIFT_MASK) {
+                        new_y -= 20.0;
+                    } else {
+                        new_y -= 1.0;
+                    }
+                    let clamped_y = (new_y as f64).clamp(0.0, (parent_alloc.height() - frame_height) as f64);
+                    *wer_y.borrow_mut() = clamped_y;
+                    fixed.move_(&frame_clone, *wer_x.borrow(), clamped_y);
+                }
+                gdk::Key::Down => {
+                    if state.contains(gdk::ModifierType::SHIFT_MASK) {
+                        new_y += 20.0;
+                    } else {
+                        new_y += 1.0;
+                    }
+                    let clamped_y = new_y.clamp(0.0, (parent_alloc.height() - frame_height) as f64);
+                    *wer_y.borrow_mut() = clamped_y;
+                    fixed.move_(&frame_clone, *wer_x.borrow(), clamped_y);
+                }
+                gdk::Key::Left => {
+                    if state.contains(gdk::ModifierType::SHIFT_MASK) {
+                        new_x -= 20.0;
+                    } else {
+                        new_x -= 1.0;
+                    }
+                    let clamped_x = new_x.clamp(0.0, (parent_alloc.width() - frame_width) as f64);
+                    *wer_x.borrow_mut() = clamped_x;
+                    fixed.move_(&frame_clone, clamped_x, *wer_y.borrow());
+                }
+                gdk::Key::Right => {
+                    if state.contains(gdk::ModifierType::SHIFT_MASK) {
+                        new_x += 20.0;
+                    } else {
+                        new_x += 1.0;
+                    }
+                    let clamped_x = new_x.clamp(0.0, (parent_alloc.width() - frame_width) as f64);
+                    *wer_x.borrow_mut() = clamped_x;
+                    fixed.move_(&frame_clone, clamped_x, *wer_y.borrow());
+                }
+                _ => return glib::Propagation::Proceed,
             }
 
-            for y in (0..parent_alloc.height()).step_by((SNAP_SIZE as f64 * SCALE) as usize) {
-                let l = DrawingArea::builder()
-                    .width_request(parent_alloc.width())
-                    .height_request(1)
-                    .css_classes(vec!["grid-line"])
-                    .build();
-                fixed.put(&l, 0.0, y as f64);
-                l.show();
-                lines.push(l);
-            }
+            glib::Propagation::Stop
+        });
+    }
 
-            grid_lines.replace(lines);
-        }
-    });
-
-    drag.connect_drag_update({
-        let frame = frame.clone();
-        let fixed = fixed.clone();
-        let start_offset = start_offset.clone();
-
-        move |_gesture, x, y| {
-            let (offset_x, offset_y) = *start_offset.borrow();
-            let new_x = x + offset_x;
-            let new_y = y + offset_y;
-
-            let parent_alloc = fixed.allocation();
-            let frame_alloc = frame.allocation();
-
-            let clamped_x = new_x.clamp(0.0, (parent_alloc.width() - frame_alloc.width()) as f64);
-            let clamped_y = new_y.clamp(0.0, (parent_alloc.height() - frame_alloc.height()) as f64);
-
-            fixed.move_(&frame, clamped_x, clamped_y);
-        }
-    });
-
-    drag.connect_drag_end({
-        let frame = frame.clone();
-        let fixed = fixed.clone();
-        let start_offset = start_offset.clone();
-        let grid_lines = grid_lines.clone();
-
-        move |_gesture, release_x, release_y| {
-            frame.set_cursor_from_name(None); // Restore cursor
-
-            let (offset_x, offset_y) = *start_offset.borrow();
-            let target_x = release_x + offset_x;
-            let target_y = release_y + offset_y;
-
-            let parent_alloc = fixed.allocation();
-            let frame_alloc = frame.allocation();
-
-            let clamped_x = target_x.clamp(0.0, (parent_alloc.width() - frame_alloc.width()) as f64);
-            let clamped_y = target_y.clamp(0.0, (parent_alloc.height() - frame_alloc.height()) as f64);
-
-            let snapped_x = ((clamped_x / (SCALE * SNAP_SIZE as f64)).round() * (SCALE * SNAP_SIZE as f64)).round();
-            let snapped_y = ((clamped_y / (SCALE * SNAP_SIZE as f64)).round() * (SCALE * SNAP_SIZE as f64)).round();
-
-            fixed.move_(&frame, snapped_x, snapped_y);
-
-            // Remove grid lines
-            for l in grid_lines.borrow().iter() {
-                fixed.remove(l);
-            }
-            grid_lines.borrow_mut().clear();
-        }
-    });
-
-    frame.add_controller(drag);
+    frame.add_controller(key_ctrl);
 }
-
 
 fn save_monitor_layout(monitors: &HashMap<String, MonitorInfo>, parent_widget: &impl IsA<gtk4::Widget>) {
     let mut config = String::new();
@@ -778,6 +756,10 @@ fn load_css() {
             margin: 5px;
         } 
 
+        frame:focus {
+            border: 2px solid rgb(255, 230, 0);
+        }
+
         .home_page {
             margin: 30px;
             padding: 10px;
@@ -1061,230 +1043,230 @@ fn build_ui(app: &Application) {
     stack_box.append(&tabs_box);
     stack_box.append(&stack);
 
-     // Wallpaper page ---------------------------------------------------------------------------------------------------------------------------------- //
-    let wallpaper_box = GtkBox::builder().orientation(Orientation::Vertical).spacing(0).build();
+    // Wallpaper page ---------------------------------------------------------------------------------------------------------------------------------- //
+    // let wallpaper_box = GtkBox::builder().orientation(Orientation::Vertical).spacing(0).build();
 
-    let output = Command::new("/home/ekah/.config/hypr/scripts/swwwallpaper.sh")
-        .output()
-        .expect("Failed to run swwwallpaper.sh");
+    // let output = Command::new("/home/ekah/.config/hypr/scripts/swwwallpaper.sh")
+    //     .output()
+    //     .expect("Failed to run swwwallpaper.sh");
 
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    let line = stdout.trim();
+    // let stdout = String::from_utf8_lossy(&output.stdout);
+    // let line = stdout.trim();
 
-    let parts: Vec<&str> = line.split(':').collect();
-    let display_name = parts[0].trim().to_string();
+    // let parts: Vec<&str> = line.split(':').collect();
+    // let display_name = parts[0].trim().to_string();
 
-    let rest = parts[1];
-    let resolution_part = rest.split(',').next().unwrap().trim().to_string();
+    // let rest = parts[1];
+    // let resolution_part = rest.split(',').next().unwrap().trim().to_string();
 
-    let image_path_part = line.split("image:").nth(1).unwrap().trim();
-    let image_filename = image_path_part
-        .rsplit('/')
-        .next()
-        .unwrap()
-        .replace(".blur", "");
+    // let image_path_part = line.split("image:").nth(1).unwrap().trim();
+    // let image_filename = image_path_part
+    //     .rsplit('/')
+    //     .next()
+    //     .unwrap()
+    //     .replace(".blur", "");
 
-    let display_label = gtk4::Label::new(Some(&format!("Display: {}", display_name)));
-    display_label.set_justify(gtk4::Justification::Right);
-    display_label.set_halign(gtk4::Align::End);
-    display_label.set_hexpand(true);
-    let resolution_label = gtk4::Label::new(Some(&format!("Resolution: {}", resolution_part)));
-    resolution_label.set_justify(gtk4::Justification::Right);
-    resolution_label.set_halign(gtk4::Align::End);
-    resolution_label.set_hexpand(true);
+    // let display_label = gtk4::Label::new(Some(&format!("Display: {}", display_name)));
+    // display_label.set_justify(gtk4::Justification::Right);
+    // display_label.set_halign(gtk4::Align::End);
+    // display_label.set_hexpand(true);
+    // let resolution_label = gtk4::Label::new(Some(&format!("Resolution: {}", resolution_part)));
+    // resolution_label.set_justify(gtk4::Justification::Right);
+    // resolution_label.set_halign(gtk4::Align::End);
+    // resolution_label.set_hexpand(true);
 
-    let image_path = format!("{}/.config/swww/cynage/{}", home_dir, image_filename);
+    // let image_path = format!("{}/.config/swww/cynage/{}", home_dir, image_filename);
 
-    let file = gtk4::gio::File::for_path(image_path);
-    let texture = gtk4::gdk::Texture::from_file(&file).unwrap();
-    let current_pic = gtk4::Picture::for_paintable(&texture);
-    let current_pic_ref = Rc::new(RefCell::new(current_pic.clone()));
+    // let file = gtk4::gio::File::for_path(image_path);
+    // let texture = gtk4::gdk::Texture::from_file(&file).unwrap();
+    // let current_pic = gtk4::Picture::for_paintable(&texture);
+    // let current_pic_ref = Rc::new(RefCell::new(current_pic.clone()));
 
-    let current_wall = GtkBox::new(Orientation::Horizontal, 2);
+    // let current_wall = GtkBox::new(Orientation::Horizontal, 2);
 
-    let wall_info = GtkBox::new(Orientation::Vertical, 10);
-    wall_info.set_hexpand(true);
-    wall_info.set_halign(gtk4::Align::Fill);
+    // let wall_info = GtkBox::new(Orientation::Vertical, 10);
+    // wall_info.set_hexpand(true);
+    // wall_info.set_halign(gtk4::Align::Fill);
 
-    let wall_buttons = GtkBox::new(Orientation::Horizontal, 5);
-    wall_buttons.set_hexpand(true);
-    wall_buttons.set_vexpand(true);
-    wall_buttons.set_valign(gtk4::Align::Baseline);
-    wall_buttons.set_halign(gtk4::Align::End);
-    let add_wall = Button::builder().child(&Label::new(Some("Add wallpapers"))).build();
-    let remove_wall = Button::builder().child(&Label::new(Some("Remove wallpaper"))).build();
-    let vdummy_forwallinfo = GtkBox::new(Orientation::Vertical, 15);
-    vdummy_forwallinfo.set_vexpand(true);
+    // let wall_buttons = GtkBox::new(Orientation::Horizontal, 5);
+    // wall_buttons.set_hexpand(true);
+    // wall_buttons.set_vexpand(true);
+    // wall_buttons.set_valign(gtk4::Align::Baseline);
+    // wall_buttons.set_halign(gtk4::Align::End);
+    // let add_wall = Button::builder().child(&Label::new(Some("Add wallpapers"))).build();
+    // let remove_wall = Button::builder().child(&Label::new(Some("Remove wallpaper"))).build();
+    // let vdummy_forwallinfo = GtkBox::new(Orientation::Vertical, 15);
+    // vdummy_forwallinfo.set_vexpand(true);
 
-    wall_buttons.append(&add_wall);
-    wall_buttons.append(&remove_wall);
+    // wall_buttons.append(&add_wall);
+    // wall_buttons.append(&remove_wall);
 
-    wall_info.append(&display_label);
-    wall_info.append(&resolution_label);
-    wall_info.append(&vdummy_forwallinfo);
-    wall_info.append(&wall_buttons);
+    // wall_info.append(&display_label);
+    // wall_info.append(&resolution_label);
+    // wall_info.append(&vdummy_forwallinfo);
+    // wall_info.append(&wall_buttons);
 
-    current_wall.append(&current_pic);
-    current_wall.append(&wall_info);
-    current_wall.set_widget_name("current_wall");
+    // current_wall.append(&current_pic);
+    // current_wall.append(&wall_info);
+    // current_wall.set_widget_name("current_wall");
 
 
-    let scrolled_window = gtk4::ScrolledWindow::builder()
-        .min_content_height(150)
-        .hscrollbar_policy(gtk4::PolicyType::Automatic)
-        .vscrollbar_policy(gtk4::PolicyType::Never)
-        .hexpand(true)
-        .vexpand(false)
-        .build();
-    scrolled_window.set_css_classes(&["wall_s"]);
+    // let scrolled_window = gtk4::ScrolledWindow::builder()
+    //     .min_content_height(150)
+    //     .hscrollbar_policy(gtk4::PolicyType::Automatic)
+    //     .vscrollbar_policy(gtk4::PolicyType::Never)
+    //     .hexpand(true)
+    //     .vexpand(false)
+    //     .build();
+    // scrolled_window.set_css_classes(&["wall_s"]);
 
-    let image_grid = GtkBox::builder()
-        .orientation(gtk4::Orientation::Horizontal)
-        .spacing(10)
-        .build();
+    // let image_grid = GtkBox::builder()
+    //     .orientation(gtk4::Orientation::Horizontal)
+    //     .spacing(10)
+    //     .build();
 
-    scrolled_window.set_child(Some(&image_grid));
+    // scrolled_window.set_child(Some(&image_grid));
 
-    wallpaper_box.append(&current_wall);
-    wallpaper_box.append(&scrolled_window);
+    // wallpaper_box.append(&current_wall);
+    // wallpaper_box.append(&scrolled_window);
 
-    // Load images dynamically
-    let add_walls_to_grid = |boxxy: &GtkBox, notiv_boxxy: &GtkBox, picc_ref: &Rc<RefCell<gtk4::Picture>>| {
-        while let Some(child) = boxxy.first_child() {
-            boxxy.remove(&child);
-        }
-        let home_dir = std::env::var("HOME").unwrap();
-        let wallpaper_dir = PathBuf::from(format!("{}/.config/swww/cynage", home_dir));
-        if let Ok(entries) = fs::read_dir(wallpaper_dir.clone()) {
-            let notiv_clone_outer_for_wall = notiv_boxxy.clone();
-            for entry in entries.flatten() {
-                let path = entry.path();
-                if path.is_file() {
-                    let filename = path.file_name().unwrap().to_string_lossy().to_string();
-                    let img_path = path.clone();
-                    let btn = Button::builder().build();
-                    btn.set_css_classes(&["walls"]);
-                    let pixbuf = gtk4::gdk_pixbuf::Pixbuf::from_file_at_scale(img_path, 260, 260, true).ok();
-                    if let Some(pix) = pixbuf {
-                        let image = Image::from_pixbuf(Some(&pix));
-                        image.set_pixel_size(260);
-                        image.add_css_class("thumbnail");
-                        btn.set_child(Some(&image));
-                    }
+    // // Load images dynamically
+    // let add_walls_to_grid = |boxxy: &GtkBox, notiv_boxxy: &GtkBox, picc_ref: &Rc<RefCell<gtk4::Picture>>| {
+    //     while let Some(child) = boxxy.first_child() {
+    //         boxxy.remove(&child);
+    //     }
+    //     let home_dir = std::env::var("HOME").unwrap();
+    //     let wallpaper_dir = PathBuf::from(format!("{}/.config/swww/cynage", home_dir));
+    //     if let Ok(entries) = fs::read_dir(wallpaper_dir.clone()) {
+    //         let notiv_clone_outer_for_wall = notiv_boxxy.clone();
+    //         for entry in entries.flatten() {
+    //             let path = entry.path();
+    //             if path.is_file() {
+    //                 let filename = path.file_name().unwrap().to_string_lossy().to_string();
+    //                 let img_path = path.clone();
+    //                 let btn = Button::builder().build();
+    //                 btn.set_css_classes(&["walls"]);
+    //                 let pixbuf = gtk4::gdk_pixbuf::Pixbuf::from_file_at_scale(img_path, 260, 260, true).ok();
+    //                 if let Some(pix) = pixbuf {
+    //                     let image = Image::from_pixbuf(Some(&pix));
+    //                     image.set_pixel_size(260);
+    //                     image.add_css_class("thumbnail");
+    //                     btn.set_child(Some(&image));
+    //                 }
 
-                    // Clicking image button to execute script
-                    let home_dir_cloned = home_dir.clone();
-                    let filename_clone = filename.clone();
-                    let current_pic_clone = picc_ref.clone();
-                    let notiv_clone_for_wall = notiv_clone_outer_for_wall.clone(); 
-                    btn.connect_clicked(move |_| {
-                        let target_path = format!("{}/.config/swww/cynage/{}", home_dir_cloned, filename_clone);
-                        let script_path = format!("{}/.config/hypr/scripts/swwwallpaper.sh", home_dir_cloned);
-                        let _ = Command::new(script_path).arg("-s").arg(&target_path).spawn();
-                        let file = gtk4::gio::File::for_path(&target_path);
-                        if let Ok(texture) = gtk4::gdk::Texture::from_file(&file) {
-                            let new_pic = gtk4::Picture::for_paintable(&texture);
-                            new_pic.set_hexpand(true);
-                            new_pic.set_vexpand(true);
-                            new_pic.set_halign(gtk4::Align::Fill);
-                            new_pic.set_valign(gtk4::Align::Fill);
-                            current_pic_clone.borrow_mut().set_paintable(Some(&texture));
-                        }
-                        let now = is_image_dark(&target_path);
-                        let prefer_output = is_system_theme_light();
-                        if now && prefer_output {
-                            show_notification(&notiv_clone_for_wall, "wallpaper changed, dark wallpaper detected");
-                            let _ = Command::new("cynagectl").arg("-s").arg("dark").spawn();
-                        } else if now && !prefer_output {
-                            show_notification(&notiv_clone_for_wall, "wallpaper changed");
-                        } else if !now && !prefer_output {
-                            show_notification(&notiv_clone_for_wall, "wallpaper changed, Light wallpaper detected");
-                            let _ = Command::new("cynagectl").arg("-s").arg("light").spawn();
-                        } else {
-                            show_notification(&notiv_clone_for_wall, "wallpaper changed");
-                        }
-                    });
-                    boxxy.append(&btn);
-                }
-            }
-        }
-    };
+    //                 // Clicking image button to execute script
+    //                 let home_dir_cloned = home_dir.clone();
+    //                 let filename_clone = filename.clone();
+    //                 let current_pic_clone = picc_ref.clone();
+    //                 let notiv_clone_for_wall = notiv_clone_outer_for_wall.clone(); 
+    //                 btn.connect_clicked(move |_| {
+    //                     let target_path = format!("{}/.config/swww/cynage/{}", home_dir_cloned, filename_clone);
+    //                     let script_path = format!("{}/.config/hypr/scripts/swwwallpaper.sh", home_dir_cloned);
+    //                     let _ = Command::new(script_path).arg("-s").arg(&target_path).spawn();
+    //                     let file = gtk4::gio::File::for_path(&target_path);
+    //                     if let Ok(texture) = gtk4::gdk::Texture::from_file(&file) {
+    //                         let new_pic = gtk4::Picture::for_paintable(&texture);
+    //                         new_pic.set_hexpand(true);
+    //                         new_pic.set_vexpand(true);
+    //                         new_pic.set_halign(gtk4::Align::Fill);
+    //                         new_pic.set_valign(gtk4::Align::Fill);
+    //                         current_pic_clone.borrow_mut().set_paintable(Some(&texture));
+    //                     }
+    //                     let now = is_image_dark(&target_path);
+    //                     let prefer_output = is_system_theme_light();
+    //                     if now && prefer_output {
+    //                         show_notification(&notiv_clone_for_wall, "wallpaper changed, dark wallpaper detected");
+    //                         let _ = Command::new("cynagectl").arg("-s").arg("dark").spawn();
+    //                     } else if now && !prefer_output {
+    //                         show_notification(&notiv_clone_for_wall, "wallpaper changed");
+    //                     } else if !now && !prefer_output {
+    //                         show_notification(&notiv_clone_for_wall, "wallpaper changed, Light wallpaper detected");
+    //                         let _ = Command::new("cynagectl").arg("-s").arg("light").spawn();
+    //                     } else {
+    //                         show_notification(&notiv_clone_for_wall, "wallpaper changed");
+    //                     }
+    //                 });
+    //                 boxxy.append(&btn);
+    //             }
+    //         }
+    //     }
+    // };
 
-    add_walls_to_grid(&image_grid, &notif_box, &current_pic_ref);
-    let image_grid_clone = image_grid.clone();
-    let notif_box_clone = notif_box.clone();
-    let window_clone = window.clone();
-    add_wall.connect_clicked(move |_| {
-        let notif_box_clone = notif_box_clone.clone();
-        let curren_pic_ref_clone = current_pic_ref.clone();
-        let dialog = FileChooserDialog::new(
-            Some("Select wallpaper to add"),
-            Some(&window_clone),
-            FileChooserAction::Open,
-            &[("_Cancel", ResponseType::Cancel), ("_Add", ResponseType::Accept)],
-        );
-        dialog.set_css_classes(&["wall-dialog"]);
-        dialog.set_size_request(400, 800);
-        add_class_recursive(&dialog.upcast_ref(), "wall-dialog");
+    // add_walls_to_grid(&image_grid, &notif_box, &current_pic_ref);
+    // let image_grid_clone = image_grid.clone();
+    // let notif_box_clone = notif_box.clone();
+    // let window_clone = window.clone();
+    // add_wall.connect_clicked(move |_| {
+    //     let notif_box_clone = notif_box_clone.clone();
+    //     let curren_pic_ref_clone = current_pic_ref.clone();
+    //     let dialog = FileChooserDialog::new(
+    //         Some("Select wallpaper to add"),
+    //         Some(&window_clone),
+    //         FileChooserAction::Open,
+    //         &[("_Cancel", ResponseType::Cancel), ("_Add", ResponseType::Accept)],
+    //     );
+    //     dialog.set_css_classes(&["wall-dialog"]);
+    //     dialog.set_size_request(400, 800);
+    //     add_class_recursive(&dialog.upcast_ref(), "wall-dialog");
 
-        let image_grid_inner = image_grid_clone.clone();
-        dialog.connect_response(move |dialog, response| {
-            if response == ResponseType::Accept {
-                if let Some(file_path) = dialog.file().and_then(|f| f.path()) {
-                    let _ = Command::new("cynagectl")
-                        .args(["-w", "add", file_path.to_str().unwrap_or_default()])
-                        .spawn();
-                }
-            }
-            dialog.close();
-            add_walls_to_grid(&image_grid_inner, &notif_box_clone, &curren_pic_ref_clone);
-        });
+    //     let image_grid_inner = image_grid_clone.clone();
+    //     dialog.connect_response(move |dialog, response| {
+    //         if response == ResponseType::Accept {
+    //             if let Some(file_path) = dialog.file().and_then(|f| f.path()) {
+    //                 let _ = Command::new("cynagectl")
+    //                     .args(["-w", "add", file_path.to_str().unwrap_or_default()])
+    //                     .spawn();
+    //             }
+    //         }
+    //         dialog.close();
+    //         add_walls_to_grid(&image_grid_inner, &notif_box_clone, &curren_pic_ref_clone);
+    //     });
 
-        dialog.show();
-    });
+    //     dialog.show();
+    // });
     
-    let window_clone2 = window.clone();
-    let image_grid_clone = image_grid.clone();
-    let notif_box_clone2 = notif_box.clone();
-    let current_pic_ref2 = Rc::new(RefCell::new(current_pic.clone()));
-    remove_wall.connect_clicked(move |_| {
-        let notif_box_clone2 = notif_box_clone2.clone();
-        let curren_pic_ref_clone2 = current_pic_ref2.clone();
-        let dialog = FileChooserDialog::new(
-            Some("Select wallpaper to remove"),
-            Some(&window_clone2),
-            FileChooserAction::Open,
-            &[("_Cancel", ResponseType::Cancel), ("_Remove", ResponseType::Accept)],
-        );
-        dialog.set_css_classes(&["wall-dialog"]);
-        dialog.set_size_request(400, 800);
-        add_class_recursive(&dialog.upcast_ref(), "wall-dialog");
+    // let window_clone2 = window.clone();
+    // let image_grid_clone = image_grid.clone();
+    // let notif_box_clone2 = notif_box.clone();
+    // let current_pic_ref2 = Rc::new(RefCell::new(current_pic.clone()));
+    // remove_wall.connect_clicked(move |_| {
+    //     let notif_box_clone2 = notif_box_clone2.clone();
+    //     let curren_pic_ref_clone2 = current_pic_ref2.clone();
+    //     let dialog = FileChooserDialog::new(
+    //         Some("Select wallpaper to remove"),
+    //         Some(&window_clone2),
+    //         FileChooserAction::Open,
+    //         &[("_Cancel", ResponseType::Cancel), ("_Remove", ResponseType::Accept)],
+    //     );
+    //     dialog.set_css_classes(&["wall-dialog"]);
+    //     dialog.set_size_request(400, 800);
+    //     add_class_recursive(&dialog.upcast_ref(), "wall-dialog");
 
-        let image_grid_inner = image_grid_clone.clone();
-        if let Some(home_dir) = std::env::var_os("HOME") {
-            let start_path = Path::new(&home_dir).join(".config/swww/cynage/");
-            let _ = dialog.set_current_folder(Some(&gtk4::gio::File::for_path(start_path)));
-        }
+    //     let image_grid_inner = image_grid_clone.clone();
+    //     if let Some(home_dir) = std::env::var_os("HOME") {
+    //         let start_path = Path::new(&home_dir).join(".config/swww/cynage/");
+    //         let _ = dialog.set_current_folder(Some(&gtk4::gio::File::for_path(start_path)));
+    //     }
 
-        dialog.connect_response(move |dialog, response| {
-            if response == ResponseType::Accept {
-                if let Some(file_path) = dialog.file().and_then(|f| f.path()) {
-                    if let Some(file_stem) = file_path.file_stem().and_then(|s| s.to_str()) {
-                        let _ = Command::new("cynagectl")
-                            .args(["-w", "remove", file_stem])
-                            .spawn();
-                    }
-                }
-            }
-            dialog.close();
-            add_walls_to_grid(&image_grid_inner, &notif_box_clone2, &curren_pic_ref_clone2);
-        });
+    //     dialog.connect_response(move |dialog, response| {
+    //         if response == ResponseType::Accept {
+    //             if let Some(file_path) = dialog.file().and_then(|f| f.path()) {
+    //                 if let Some(file_stem) = file_path.file_stem().and_then(|s| s.to_str()) {
+    //                     let _ = Command::new("cynagectl")
+    //                         .args(["-w", "remove", file_stem])
+    //                         .spawn();
+    //                 }
+    //             }
+    //         }
+    //         dialog.close();
+    //         add_walls_to_grid(&image_grid_inner, &notif_box_clone2, &curren_pic_ref_clone2);
+    //     });
 
-        dialog.show();
-    });
+    //     dialog.show();
+    // });
 
 
-    stack.add_titled(&wallpaper_box, Some("wallpaper"), "Wallpaper");
+    // stack.add_titled(&wallpaper_box, Some("wallpaper"), "Wallpaper");
 
     // shell settings ---------------------------------------------------------------------------------------------------------------------------------- //
     
