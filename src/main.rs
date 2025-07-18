@@ -9,8 +9,12 @@ use std::io::{Write, BufReader, BufRead};
 use std::fs::OpenOptions;
 use std::path::Path;
 use networkmanager::{NetworkManager, devices::Device};
-use networkmanager::connection::Connection;
 use networkmanager::devices::Wireless;
+use dbus::blocking::Connection as DbusConnection;
+use vte4::Terminal;
+use vte4::TerminalExtManual;
+use vte4::prelude::*;
+use vte4::PtyFlags;
 
 struct MonitorInfo {
     name: String,
@@ -414,69 +418,116 @@ fn setty_wifi_enabled(enabled: bool) {
     let _ = Command::new("nmcli").args(&["radio", "wifi", state]).status();
 }
 
-fn refresh_wifi_listty(conn: &dbus::blocking::Connection, network_list: &GtkBox) {
+fn clean_ssid(s: &str) -> String {
+    // Remove leading/trailing whitespace and quotes
+    let s = s.trim();
+    s.trim_matches('"').to_string()
+}
+
+fn get_active_ssid() -> Option<String> {
+    // Use nmcli to get the current active SSID, clean, and return it
+    if let Ok(out) = Command::new("nmcli")
+        .args(&["-t", "-f", "active,ssid", "dev", "wifi"])
+        .output()
+    {
+        if let Ok(text) = String::from_utf8(out.stdout) {
+            for line in text.lines() {
+                if line.starts_with("yes:") {
+                    let ssid = &line[4..];
+                    let cleaned = clean_ssid(ssid);
+                    if !cleaned.is_empty() && cleaned != "--" {
+                        return Some(cleaned);
+                    }
+                }
+            }
+        }
+    }
+    None
+}
+
+fn refresh_wifi_listty(conn: &DbusConnection, network_list: &GtkBox) {
     // Remove all children
     while let Some(child) = network_list.first_child() {
         network_list.remove(&child);
     }
 
-    let nm = NetworkManager::new(&conn);
+    // Collect the current connected SSID
+    let active_ssid = get_active_ssid();
+
+    let nm = NetworkManager::new(conn);
     let devices = match nm.get_devices() {
         Ok(devs) => devs,
         Err(_) => return,
     };
 
+    let button_vec = Rc::new(RefCell::new(Vec::new()));
+
     for dev in devices {
         if let Device::WiFi(wifi_dev) = dev {
-            let aps = match wifi_dev.get_access_points() {
-                Ok(aps) => aps,
-                Err(_) => continue,
-            };
+            let aps = match wifi_dev.get_access_points() { Ok(aps) => aps, Err(_) => continue };
             for ap in aps {
                 let ssid = ap.ssid().unwrap_or_else(|_| "(unknown SSID)".to_string());
-                let strength = ap.strength().unwrap_or(0); // <- this line avoids the error!
-                let label = Label::new(Some(&format!("{} ({}%)", ssid, strength)));
-                network_list.append(&label);
+                let clean_button_ssid = clean_ssid(&ssid);
+                let strength = ap.strength().unwrap_or(0);
+
+                let button = Button::with_label(&format!("{} ({}%)", ssid, strength));
+                button.set_css_classes(&["network_label"]);
+
+                // Highlight the already-connected SSID
+                if let Some(ref active) = active_ssid {
+                    if &clean_button_ssid == active {
+                        button.add_css_class("connected");
+                    }
+                }
+
+                button_vec.borrow_mut().push(button.clone());
+                let ssid_clone = ssid.clone();
+                let button_vec_clone = button_vec.clone();
+                let button_clone = button.clone();
+
+                button.connect_clicked(move |_| {
+                    let output = Command::new("nmcli")
+                        .args(&["device", "wifi", "connect", &ssid_clone])
+                        .output();
+
+                    let mut connected = false;
+                    if let Ok(_out) = output {
+                        let check = Command::new("nmcli")
+                            .args(&["-t", "-f", "active,ssid", "dev", "wifi"])
+                            .output();
+
+                        if let Ok(check) = check {
+                            if let Ok(outstr) = String::from_utf8(check.stdout) {
+                                for line in outstr.lines() {
+                                    if line.starts_with("yes:") && clean_ssid(&line[4..]) == clean_ssid(&ssid_clone) {
+                                        connected = true;
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // Remove 'connected' from all, add only to this one if successful
+                    for btn in button_vec_clone.borrow().iter() {
+                        btn.remove_css_class("connected");
+                    }
+
+                    if connected {
+                        eprint!("connect");
+                        button_clone.add_css_class("connected");
+                    } else {
+                        eprint!("failed");
+                        button_clone.remove_css_class("connected");
+                    }
+                });
+
+                network_list.append(&button);
             }
         }
     }
 }
 
-// fn refresh_saved_connections(saved_list: &GtkBox, details_stack: &Stack) {
-//     saved_list.foreach(|child| saved_list.remove(child));
-//     let nm = match NetworkManager::new() { Ok(nm) => nm, Err(_) => return };
-//     let conns = match nm.get_connections() { Ok(cs) => cs, Err(_) => return };
-
-//     for conn in conns {
-//         let id = conn.get_id().unwrap_or_else(|| "<Unnamed Connection>".to_string());
-//         let conn_clone = conn.clone();
-//         let details_stack_clone = details_stack.clone();
-//         let btn = Button::with_label(&id);
-
-//         btn.connect_clicked(move |_| {
-//             let page = GtkBox::new(Orientation::Vertical, 10);
-//             let id_label = Label::new(Some(&format!("SSID: {}", conn_clone.get_id().unwrap_or_default())));
-
-//             let pass_label = Label::new(Some("Password: <hidden>"));
-//             // Add logic to reveal secrets if desired and permitted
-
-//             let back_btn = Button::with_label("Back");
-//             let details_stack_clone2 = details_stack_clone.clone();
-//             back_btn.connect_clicked(move |_| {
-//                 details_stack_clone2.set_visible_child_name("list");
-//             });
-
-//             page.append(&id_label);
-//             page.append(&pass_label);
-//             page.append(&back_btn);
-
-//             details_stack_clone.add_titled(&page, Some(&id), &id);
-//             details_stack_clone.set_visible_child_name(&id);
-//         });
-
-//         saved_list.append(&btn);
-//     }
-// }
 
 
 fn load_css() {
@@ -522,6 +573,8 @@ fn load_css() {
         .network_label {
             color: rgb(2, 71, 59);
             letter-spacing: 2px;
+            padding: 25px;
+            font-weight: 700;
         }
 
         button {
@@ -556,7 +609,7 @@ fn load_css() {
         }
 
         button.connected {
-            background-color: rgb(5, 148, 122);
+            background-color: rgba(0, 0, 0, 0.2);
         }
 
         box {
@@ -1550,6 +1603,7 @@ BBBBB++++++++++++++++BBBBBB", "startup", "Shell configs >> Startup sound setting
 
     let nm_edit_button = Button::with_label("Edit Saved Connections");
     nm_edit_button.set_halign(gtk4::Align::Start);
+    nm_edit_button.set_hexpand(true);
 
     nm_ctrl.append(&nm_edit_button);
     nm_ctrl.append(&nm_toggle);
@@ -1561,14 +1615,12 @@ BBBBB++++++++++++++++BBBBBB", "startup", "Shell configs >> Startup sound setting
         .hexpand(true)
         .vexpand(true)
         .build();
-    let network_list = GtkBox::new(Orientation::Vertical, 0);
+    let network_list = GtkBox::new(Orientation::Vertical, 10);
     nm_list_scroller.set_child(Some(&network_list));
 
     network_home.append(&nm_ctrl);
     network_home.append(&nm_list_scroller);
 
-    // Edit tab
-    let edit_box = GtkBox::new(Orientation::Vertical, 8);
     let saved_scroller = ScrolledWindow::builder()
         .min_content_height(140)
         .hscrollbar_policy(gtk4::PolicyType::Never)
@@ -1579,23 +1631,49 @@ BBBBB++++++++++++++++BBBBBB", "startup", "Shell configs >> Startup sound setting
     let saved_list = GtkBox::new(Orientation::Vertical, 0);
     saved_scroller.set_child(Some(&saved_list));
 
-    let edit_details_stack = Stack::new();
-    edit_details_stack.add_titled(&saved_scroller, Some("list"), "Saved List");
-    edit_box.append(&edit_details_stack);
+    network_home.append(&saved_scroller);
 
+
+    let vte_box = GtkBox::new(Orientation::Vertical, 0);
+    vte_box.set_hexpand(true);
+    vte_box.set_vexpand(true);
+    vte_box.set_halign(gtk4::Align::Center);
+    vte_box.set_valign(gtk4::Align::Center);
+
+    let vte_term = Terminal::default();
+
+    vte_term.spawn_async(
+        PtyFlags::DEFAULT,
+        None,      
+        &["nmtui", "edit"],          
+        &[],            
+        gtk4::glib::SpawnFlags::DEFAULT,
+        || {},               
+        -1,                      
+        None::<&gtk4::gio::Cancellable>,  
+        move |res: Result<gtk4::glib::Pid, gtk4::glib::Error>| {
+            if let Err(e) = res {
+                eprintln!("Failed to spawn terminal process: {}", e);
+            }
+        },
+    );
+
+    vte_box.append(&vte_term);
     net_stack.add_titled(&network_home, Some("home"), "Network Home");
-    net_stack.add_titled(&edit_box, Some("edit"), "Edit Saved");
+    net_stack.add_titled(&vte_box, Some("edit"), "Edit Saved");
 
-    stack.add_titled(&net_stack, Some("network"), "Network Settings");
+    let back_button_edit = back_button.clone();
 
-    // Button connections
-    let saved_list_clone = saved_list.clone();
-    let edit_details_stack_clone = edit_details_stack.clone();
-    let net_stack_clone = net_stack.clone();
+    let stack_weak = net_stack.downgrade();
+    let page_title_clone_edit = page_title.clone();
+
+    
     nm_edit_button.connect_clicked(move |_| {
-        net_stack_clone.set_visible_child_name("edit");
-        edit_details_stack_clone.set_visible_child_name("list");
-        // refresh_saved_connections(&saved_list_clone, &edit_details_stack_clone);
+        if let Some(stack) = stack_weak.upgrade() {    
+            stack.set_visible_child_name("edit");
+            typing_effect(&page_title_clone_edit, "network settings >> edit saved connections", 10);
+            back_button_edit.set_visible(true);
+        }
     });
 
     // Timer for 1s refresh
@@ -1605,15 +1683,9 @@ BBBBB++++++++++++++++BBBBBB", "startup", "Shell configs >> Startup sound setting
         refresh_wifi_listty(&conn, &network_list_clone);
         glib::ControlFlow::Continue
     });
-    let saved_list_clone2 = saved_list.clone();
-    let edit_details_stack_clone2 = edit_details_stack.clone();
-    let net_stack_clone2 = net_stack.clone();
-    glib::timeout_add_seconds_local(1, move || {
-        if net_stack_clone2.visible_child_name().as_deref() == Some("edit") {
-            // refresh_saved_connections(&saved_list_clone2, &edit_details_stack_clone2);
-        }
-        glib::ControlFlow::Continue
-    });
+
+
+    stack.add_titled(&net_stack, Some("network"), "Network Settings");
 
     // window ----------------------------------------------------------------------------------------------------------------------------------------- //
     let back_button_clone = back_button.clone();
@@ -1623,7 +1695,7 @@ BBBBB++++++++++++++++BBBBBB", "startup", "Shell configs >> Startup sound setting
         if let Some(visible_name) = stack_clone.visible_child_name() {
             match visible_name.as_str() {
                 "network" => {
-                    net_stack_clone.set_visible_child_name("network List");
+                    net_stack_clone.set_visible_child_name("home");
                     typing_effect(&page_title_clone, "network", 10);
                     back_button_clone.set_visible(false);
                 }
@@ -1633,8 +1705,7 @@ BBBBB++++++++++++++++BBBBBB", "startup", "Shell configs >> Startup sound setting
                     back_button_clone.set_visible(false);
                 }
                 _ => {
-                    // default fallback, or hide back button
-                    back_button_clone.set_visible(false);
+                    eprint!("not in the required page");
                 }
             }
         }
