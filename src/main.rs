@@ -1,19 +1,22 @@
-use gtk4::glib::Propagation;
 use gtk4::{
     prelude::*, Switch, Frame, Application, ApplicationWindow, Box as GtkBox, Button, Image, Label, Orientation, Stack, GestureDrag,
-    Fixed, MessageDialog , gdk::Display , CssProvider, glib, ResponseType, Widget, DrawingArea, Dialog, FileChooserDialog, FileChooserAction, gdk
+    Fixed, MessageDialog , gdk::Display , CssProvider, glib, ResponseType, Widget, DrawingArea, Dialog, FileChooserDialog, FileChooserAction, gdk, ScrolledWindow
 };
 use std::{cell::RefCell, fs, path::PathBuf, process::Command, rc::Rc};
 use std::collections::HashMap;
-use std::env;
+use std::{borrow, env};
 use std::io::{Write, BufReader, BufRead};
 use std::fs::OpenOptions;
 use std::path::Path;
+use networkmanager::{NetworkManager, devices::Device};
+use networkmanager::connection::Connection;
+use networkmanager::devices::Wireless;
 
 struct MonitorInfo {
     name: String,
     width: i32,
     height: i32,
+    rotation: Rc<RefCell<u32>>,
     frame: Frame,
 }
 
@@ -50,6 +53,17 @@ fn typing_effect(label: &Label, text: &str, delay_ms: u64) {
     });
 }
 
+fn rotate_info(info: &Label, name: &str, rot: u32){
+    let deg = match rot {
+        1 => "90°",
+        2 => "180°",
+        3 => "270°",
+        _ => "0°",
+    };
+    let label_info = format!("{}\nRotation:{}", name, deg);
+    info.set_text(&label_info);
+}
+
 fn load_monitoors(fixed: &Fixed) -> HashMap<String, MonitorInfo> {
     let output = Command::new("hyprctl")
         .arg("monitors")
@@ -72,9 +86,11 @@ fn load_monitoors(fixed: &Fixed) -> HashMap<String, MonitorInfo> {
             name = first_line.split_whitespace().next().unwrap_or("");
         }
 
+        let mut transform = 0;
         for line in lines {
-            if line.contains(" at ") {
-                let parts: Vec<_> = line.trim().split(" at ").collect();
+            let trimmed = line.trim();
+            if trimmed.contains(" at ") {
+                let parts: Vec<_> = trimmed.split(" at ").collect();
                 if parts.len() == 2 {
                     let res = parts[0].split('@').next().unwrap_or("").trim();
                     let pos = parts[1].trim();
@@ -92,7 +108,19 @@ fn load_monitoors(fixed: &Fixed) -> HashMap<String, MonitorInfo> {
                     }
                 }
             }
+
+            if trimmed.starts_with("transform:") {
+                transform = trimmed
+                    .trim_start_matches("transform:")
+                    .trim()
+                    .parse::<u32>()
+                    .unwrap_or(0);
+            }
         }
+
+        let rot = Rc::new(RefCell::new(transform));
+        let info = Label::new(None);
+        rotate_info(&info, name, *rot.borrow());
 
         let frame = Frame::builder()
             .width_request((width as f64 * SCALE) as i32)
@@ -108,22 +136,22 @@ fn load_monitoors(fixed: &Fixed) -> HashMap<String, MonitorInfo> {
         });
         frame.add_controller(click);
 
-        frame.set_child(Some(&Label::new(Some(name))));
+        frame.set_child(Some(&info));
 
         fixed.put(&frame, pos_x as f64 * SCALE, pos_y as f64 * SCALE);
 
-       enable_key_movement(&frame, fixed);
+        enable_key_movement(&frame, fixed, &rot, name, &info);
 
         monitors.insert(
             name.to_string(),
-            MonitorInfo { name: name.to_string(), width, height, frame: frame.clone() },
+            MonitorInfo { name: name.to_string(), width, height, rotation: rot.clone(), frame: frame.clone() },
         );
     }
 
     monitors
 }
 
-fn enable_key_movement(frame: &Frame, fixed: &Fixed) {
+fn enable_key_movement(frame: &Frame, fixed: &Fixed, rotation: &Rc<RefCell<u32>>, name: &str, label: &Label) {
     frame.set_focusable(true);
     frame.set_can_focus(true);
 
@@ -132,6 +160,7 @@ fn enable_key_movement(frame: &Frame, fixed: &Fixed) {
 
     let wer_x = Rc::new(RefCell::new(0.0));
     let wer_y = Rc::new(RefCell::new(0.0));
+    let rot = rotation.clone();
 
     let key_ctrl = gtk4::EventControllerKey::new();
 
@@ -140,60 +169,55 @@ fn enable_key_movement(frame: &Frame, fixed: &Fixed) {
         let wer_y = wer_y.clone();
         let frame_clone = frame_clone.clone();
         let fixed = fixed.clone();
+        let rot = rot.clone();
 
-        key_ctrl.connect_key_pressed(move |_, keyval,_, state|{
-            let parent_alloc = fixed.allocation();
-            let frame_width = frame_clone.width();
-            let frame_height = frame_clone.height();
+        key_ctrl.connect_key_pressed({
+            let name = name.to_string(); // capture only once as String
+            let label = label.clone();
 
-            let mut new_x = *wer_x.borrow();
-            let mut new_y = *wer_y.borrow();
+            move |_, keyval, _, state| {
+                let parent_alloc = fixed.allocation();
+                let frame_width = frame_clone.width();
+                let frame_height = frame_clone.height();
 
-            match keyval {
-                gtk4::gdk::Key::Up => {
-                    if state.contains(gdk::ModifierType::SHIFT_MASK) {
-                        new_y -= 20.0;
-                    } else {
-                        new_y -= 1.0;
+                let mut new_x = *wer_x.borrow();
+                let mut new_y = *wer_y.borrow();
+
+                match keyval {
+                    gdk::Key::Up => {
+                        new_y -= if state.contains(gdk::ModifierType::SHIFT_MASK) { 20.0 } else { 1.0 };
+                        let clamped_y = (new_y as f64).clamp(0.0, (parent_alloc.height() - frame_height) as f64);
+                        *wer_y.borrow_mut() = clamped_y;
+                        fixed.move_(&frame_clone, *wer_x.borrow(), clamped_y);
                     }
-                    let clamped_y = (new_y as f64).clamp(0.0, (parent_alloc.height() - frame_height) as f64);
-                    *wer_y.borrow_mut() = clamped_y;
-                    fixed.move_(&frame_clone, *wer_x.borrow(), clamped_y);
-                }
-                gdk::Key::Down => {
-                    if state.contains(gdk::ModifierType::SHIFT_MASK) {
-                        new_y += 20.0;
-                    } else {
-                        new_y += 1.0;
+                    gdk::Key::Down => {
+                        new_y += if state.contains(gdk::ModifierType::SHIFT_MASK) { 20.0 } else { 1.0 };
+                        let clamped_y = new_y.clamp(0.0, (parent_alloc.height() - frame_height) as f64);
+                        *wer_y.borrow_mut() = clamped_y;
+                        fixed.move_(&frame_clone, *wer_x.borrow(), clamped_y);
                     }
-                    let clamped_y = new_y.clamp(0.0, (parent_alloc.height() - frame_height) as f64);
-                    *wer_y.borrow_mut() = clamped_y;
-                    fixed.move_(&frame_clone, *wer_x.borrow(), clamped_y);
-                }
-                gdk::Key::Left => {
-                    if state.contains(gdk::ModifierType::SHIFT_MASK) {
-                        new_x -= 20.0;
-                    } else {
-                        new_x -= 1.0;
+                    gdk::Key::Left => {
+                        new_x -= if state.contains(gdk::ModifierType::SHIFT_MASK) { 20.0 } else { 1.0 };
+                        let clamped_x = new_x.clamp(0.0, (parent_alloc.width() - frame_width) as f64);
+                        *wer_x.borrow_mut() = clamped_x;
+                        fixed.move_(&frame_clone, clamped_x, *wer_y.borrow());
                     }
-                    let clamped_x = new_x.clamp(0.0, (parent_alloc.width() - frame_width) as f64);
-                    *wer_x.borrow_mut() = clamped_x;
-                    fixed.move_(&frame_clone, clamped_x, *wer_y.borrow());
-                }
-                gdk::Key::Right => {
-                    if state.contains(gdk::ModifierType::SHIFT_MASK) {
-                        new_x += 20.0;
-                    } else {
-                        new_x += 1.0;
+                    gdk::Key::Right => {
+                        new_x += if state.contains(gdk::ModifierType::SHIFT_MASK) { 20.0 } else { 1.0 };
+                        let clamped_x = new_x.clamp(0.0, (parent_alloc.width() - frame_width) as f64);
+                        *wer_x.borrow_mut() = clamped_x;
+                        fixed.move_(&frame_clone, clamped_x, *wer_y.borrow());
                     }
-                    let clamped_x = new_x.clamp(0.0, (parent_alloc.width() - frame_width) as f64);
-                    *wer_x.borrow_mut() = clamped_x;
-                    fixed.move_(&frame_clone, clamped_x, *wer_y.borrow());
+                    gdk::Key::Control_L => {
+                        let mut r = rot.borrow_mut();
+                        *r = (*r + 1) % 4;
+                        println!("Rotation set to: {}", *r);
+                        rotate_info(&label, &name, *r);
+                    }
+                    _ => return glib::Propagation::Proceed,
                 }
-                _ => return glib::Propagation::Proceed,
+                glib::Propagation::Stop
             }
-
-            glib::Propagation::Stop
         });
     }
 
@@ -207,9 +231,10 @@ fn save_monitor_layout(monitors: &HashMap<String, MonitorInfo>, parent_widget: &
         let alloc = monitor.frame.allocation();
         let pos_x = (alloc.x() as f64 / SCALE).round() as i32;
         let pos_y = (alloc.y() as f64 / SCALE).round() as i32;
+        let rot = *monitor.rotation.borrow();
         config.push_str(&format!(
-            "monitor = {}, {}x{}, {}x{}, 1\n",
-            monitor.name, monitor.width, monitor.height, pos_x, pos_y
+            "monitor = {}, {}x{}, {}x{}, 1, transform, {}\n",
+            monitor.name, monitor.width, monitor.height, pos_x, pos_y, rot
         ));
     }
 
@@ -234,7 +259,6 @@ fn save_monitor_layout(monitors: &HashMap<String, MonitorInfo>, parent_widget: &
 
             println!("Monitor layout saved to {}", config_path);
 
-            // Optional: Live reload hyprland
             let _ = Command::new("hyprctl").arg("reload").output();
         }
         dialog.close();
@@ -269,7 +293,6 @@ fn setup_switch(theme_switch: &Switch) {
 
         // Run the command
         let _ = Command::new("sh").arg("-c").arg(cmd).spawn();
-        // Allow the state change
         gtk4::glib::Propagation::Proceed
     });
 }
@@ -380,135 +403,81 @@ fn extract_current_selection(config_path: &str) -> Option<String> {
     None
 }
 
-pub fn list_wifi_networks_clickable(container: &GtkBox) {
-    let output = Command::new("nmcli")
-        .args(["-t", "-f", "IN-USE,SSID,SIGNAL", "dev", "wifi"])
-        .output()
-        .expect("Failed to run nmcli");
+fn getty_wifi_status() -> bool {
+    let conn = dbus::blocking::Connection::new_system().unwrap();
+    let nm = NetworkManager::new(&conn);
+    nm.wireless_enabled().unwrap_or(false)
+}
 
-    let stdout = String::from_utf8_lossy(&output.stdout);
+fn setty_wifi_enabled(enabled: bool) {
+    let state = if enabled { "on" } else { "off" };
+    let _ = Command::new("nmcli").args(&["radio", "wifi", state]).status();
+}
 
-    while let Some(child) = container.first_child() {
-        container.remove(&child);
+fn refresh_wifi_listty(conn: &dbus::blocking::Connection, network_list: &GtkBox) {
+    // Remove all children
+    while let Some(child) = network_list.first_child() {
+        network_list.remove(&child);
     }
 
-    // Store buttons so we can later update their CSS classes
-    let buttons: Rc<RefCell<Vec<Button>>> = Rc::new(RefCell::new(Vec::new()));
+    let nm = NetworkManager::new(&conn);
+    let devices = match nm.get_devices() {
+        Ok(devs) => devs,
+        Err(_) => return,
+    };
 
-    for line in stdout.lines() {
-        let parts: Vec<&str> = line.split(':').collect();
-        if parts.len() != 3 {
-            continue;
-        }
-
-        let in_use = parts[0].trim();
-        let ssid = parts[1].trim();
-        let signal: u32 = parts[2].trim().parse().unwrap_or(0);
-
-        if ssid.is_empty() {
-            continue;
-        }
-
-        let bars = match signal {
-            75..=100 => "████",
-            50..=74 => "███",
-            25..=49 => "██",
-            1..=24 => "█",
-            _ => "",
-        };
-
-        let label_text = Label::new(Some(&ssid));
-        label_text.set_hexpand(true);
-        label_text.set_halign(gtk4::Align::Start);
-        let label_bars = Label::new(Some(&bars));
-        label_bars.set_hexpand(true);
-        label_bars.set_halign(gtk4::Align::End);
-        let label_box = GtkBox::new(Orientation::Horizontal, 0);
-        label_box.set_hexpand(true);
-        label_box.append(&label_text);
-        label_box.append(&label_bars);
-        
-        let btn = Button::builder().child(&label_box).build();
-        btn.set_hexpand(true);
-        btn.set_halign(gtk4::Align::Fill);
-
-        if in_use == "*" {
-            btn.add_css_class("connected");
-            label_text.set_css_classes(&["network_label"]);
-            label_bars.set_css_classes(&["network_label"]);
-        }
-
-        let ssid_cloned = ssid.to_string();
-        let btn_cloned = btn.clone();
-        let buttons_ref = Rc::clone(&buttons);
-
-        btn.connect_clicked(move |_| {
-            let result = Command::new("nmcli")
-                .args(["dev", "wifi", "connect", &ssid_cloned, "--ask"])
-                .output()
-                .expect("Failed to run nmcli connect");
-
-            let (title, msg) = if result.status.success() {
-                ("Connected", format!("Successfully connected to \"{}\".", ssid_cloned))
-            } else {
-                (
-                    "Connection Failed",
-                    format!(
-                        "Failed to connect to \"{}\":\n{}",
-                        ssid_cloned,
-                        String::from_utf8_lossy(&result.stderr)
-                    ),
-                )
+    for dev in devices {
+        if let Device::WiFi(wifi_dev) = dev {
+            let aps = match wifi_dev.get_access_points() {
+                Ok(aps) => aps,
+                Err(_) => continue,
             };
-
-            // Find the top-level window
-            let parent_win = btn_cloned
-                .root()
-                .and_then(|w| w.downcast::<ApplicationWindow>().ok())
-                .unwrap();
-
-            let dialog = Dialog::builder()
-                .transient_for(&parent_win)
-                .modal(true)
-                .title(title)
-                .build();
-
-            dialog.content_area().append(&Label::new(Some(&msg)));
-            dialog.add_button("OK", ResponseType::Ok);
-            dialog.connect_response(move |d, _| {
-                d.close();
-            });
-            dialog.show();
-
-            // If success, update CSS classes
-            if result.status.success() {
-                for b in buttons_ref.borrow().iter() {
-                    b.remove_css_class("connected");
-                    label_text.remove_css_class("network_label");
-                    label_text.remove_css_class("network_label");
-                }
-                btn_cloned.add_css_class("connected");
+            for ap in aps {
+                let ssid = ap.ssid().unwrap_or_else(|_| "(unknown SSID)".to_string());
+                let strength = ap.strength().unwrap_or(0); // <- this line avoids the error!
+                let label = Label::new(Some(&format!("{} ({}%)", ssid, strength)));
+                network_list.append(&label);
             }
-        });
-
-        container.append(&btn);
-        buttons.borrow_mut().push(btn);
+        }
     }
 }
 
-fn gett_wifi_status() -> bool {
-    let output = Command::new("nmcli")
-        .args(["radio", "wifi"])
-        .output()
-        .expect("Failed to get Wi-Fi status");
-    String::from_utf8_lossy(&output.stdout).trim() == "enabled"
-}
+// fn refresh_saved_connections(saved_list: &GtkBox, details_stack: &Stack) {
+//     saved_list.foreach(|child| saved_list.remove(child));
+//     let nm = match NetworkManager::new() { Ok(nm) => nm, Err(_) => return };
+//     let conns = match nm.get_connections() { Ok(cs) => cs, Err(_) => return };
 
-fn sett_wifi_status(enabled: bool) {
-    let _ = Command::new("nmcli")
-        .args(["radio", "wifi", if enabled { "on" } else { "off" }])
-        .output();
-}
+//     for conn in conns {
+//         let id = conn.get_id().unwrap_or_else(|| "<Unnamed Connection>".to_string());
+//         let conn_clone = conn.clone();
+//         let details_stack_clone = details_stack.clone();
+//         let btn = Button::with_label(&id);
+
+//         btn.connect_clicked(move |_| {
+//             let page = GtkBox::new(Orientation::Vertical, 10);
+//             let id_label = Label::new(Some(&format!("SSID: {}", conn_clone.get_id().unwrap_or_default())));
+
+//             let pass_label = Label::new(Some("Password: <hidden>"));
+//             // Add logic to reveal secrets if desired and permitted
+
+//             let back_btn = Button::with_label("Back");
+//             let details_stack_clone2 = details_stack_clone.clone();
+//             back_btn.connect_clicked(move |_| {
+//                 details_stack_clone2.set_visible_child_name("list");
+//             });
+
+//             page.append(&id_label);
+//             page.append(&pass_label);
+//             page.append(&back_btn);
+
+//             details_stack_clone.add_titled(&page, Some(&id), &id);
+//             details_stack_clone.set_visible_child_name(&id);
+//         });
+
+//         saved_list.append(&btn);
+//     }
+// }
+
 
 fn load_css() {
     let csss = r#"
@@ -1404,9 +1373,15 @@ BBBBB++++++++++++++++BBBBBB", "startup", "Shell configs >> Startup sound setting
     scrolled.set_css_classes(&["display_win"]);
 
     scrolled.set_child(Some(&fixed));
+    let play_frame_monitors = GtkBox::new(Orientation::Horizontal, 5);
+    play_frame_monitors.set_vexpand(true);
+    let play_frame_key_info = Label::new(Some("Select a display\nUse arrow keys to move\nControl_L to rotate display"));
+    play_frame_key_info.set_vexpand(true);
+    play_frame_key_info.set_valign(gtk4::Align::Baseline);
 
-    monitor_box.append(&back_button);
-    monitor_box.append(&scrolled);
+    play_frame_monitors.append(&scrolled);
+    play_frame_monitors.append(&play_frame_key_info);
+    monitor_box.append(&play_frame_monitors);
 
     // Load monitors
     let monitors = Rc::new(RefCell::new(load_monitoors(&fixed)));
@@ -1561,68 +1536,84 @@ BBBBB++++++++++++++++BBBBBB", "startup", "Shell configs >> Startup sound setting
     let net_stack = Stack::new();
     
     let network_home = GtkBox::new(Orientation::Vertical, 0);
-    network_home.set_hexpand(true);
-    network_home.set_vexpand(true);
+    let nm_ctrl = GtkBox::new(Orientation::Horizontal, 7);
+    nm_ctrl.set_hexpand(true);
 
-    let nm_list_scroller = gtk4::ScrolledWindow::builder()
+    let nm_toggle = Switch::new();
+    nm_toggle.set_active(getty_wifi_status());
+    nm_toggle.set_halign(gtk4::Align::End);
+
+    nm_toggle.connect_state_set(|_, state| {
+        setty_wifi_enabled(state);
+        glib::Propagation::Proceed
+    });
+
+    let nm_edit_button = Button::with_label("Edit Saved Connections");
+    nm_edit_button.set_halign(gtk4::Align::Start);
+
+    nm_ctrl.append(&nm_edit_button);
+    nm_ctrl.append(&nm_toggle);
+
+    let nm_list_scroller = ScrolledWindow::builder()
         .min_content_height(150)
         .hscrollbar_policy(gtk4::PolicyType::Never)
         .vscrollbar_policy(gtk4::PolicyType::Automatic)
         .hexpand(true)
         .vexpand(true)
         .build();
-
     let network_list = GtkBox::new(Orientation::Vertical, 0);
-    network_list.set_hexpand(true);
-    network_list.set_vexpand(true);
-    list_wifi_networks_clickable(&network_list);
     nm_list_scroller.set_child(Some(&network_list));
-    nm_list_scroller.set_css_classes(&["display_win"]);
-
-    let nm_toggle = Switch::new();
-    nm_toggle.set_halign(gtk4::Align::End);
-    nm_toggle.set_hexpand(true);
-    nm_toggle.set_active(gett_wifi_status());
-
-    nm_toggle.connect_state_set(move |_, state| {
-        sett_wifi_status(state);
-        glib::Propagation::Proceed
-    });
-
-    let nm_ctrl = GtkBox::new(Orientation::Horizontal, 5);
-    nm_ctrl.set_hexpand(true);
-    nm_ctrl.set_halign(gtk4::Align::Fill);
-    let nm_edit_button = Button::with_label("Edit Saved Connections");
-    nm_edit_button.set_halign(gtk4::Align::Start);
-    nm_edit_button.set_hexpand(true);
-    let page_title_clone_edit = page_title.clone();
-    let back_button_clone = back_button.clone();  
-    let stack_weak = net_stack.downgrade(); 
-    
-    nm_edit_button.connect_clicked(move |_| {
-        if let Some(stack) = stack_weak.upgrade() {    
-            stack.set_visible_child_name("edit");
-            typing_effect(&page_title_clone_edit, "network settings >> edit saved connections", 10);
-            back_button_clone.set_visible(true);
-        }
-    });
-    
-
-    nm_ctrl.append(&nm_edit_button);
-    nm_ctrl.append(&nm_toggle);
 
     network_home.append(&nm_ctrl);
     network_home.append(&nm_list_scroller);
 
-    // edit page
-    let network_edit = GtkBox::new(Orientation::Vertical, 5);
-    network_edit.append(&Label::new(Some("edit page")));
+    // Edit tab
+    let edit_box = GtkBox::new(Orientation::Vertical, 8);
+    let saved_scroller = ScrolledWindow::builder()
+        .min_content_height(140)
+        .hscrollbar_policy(gtk4::PolicyType::Never)
+        .vscrollbar_policy(gtk4::PolicyType::Automatic)
+        .hexpand(true)
+        .vexpand(true)
+        .build();
+    let saved_list = GtkBox::new(Orientation::Vertical, 0);
+    saved_scroller.set_child(Some(&saved_list));
 
-    // main stack
-    net_stack.add_titled(&network_home, Some("network List"), "Network lsit");
-    net_stack.add_titled(&network_edit, Some("edit"), "Edit Saved");
+    let edit_details_stack = Stack::new();
+    edit_details_stack.add_titled(&saved_scroller, Some("list"), "Saved List");
+    edit_box.append(&edit_details_stack);
 
-    stack.add_titled(&net_stack, Some("network"), "network settings");
+    net_stack.add_titled(&network_home, Some("home"), "Network Home");
+    net_stack.add_titled(&edit_box, Some("edit"), "Edit Saved");
+
+    stack.add_titled(&net_stack, Some("network"), "Network Settings");
+
+    // Button connections
+    let saved_list_clone = saved_list.clone();
+    let edit_details_stack_clone = edit_details_stack.clone();
+    let net_stack_clone = net_stack.clone();
+    nm_edit_button.connect_clicked(move |_| {
+        net_stack_clone.set_visible_child_name("edit");
+        edit_details_stack_clone.set_visible_child_name("list");
+        // refresh_saved_connections(&saved_list_clone, &edit_details_stack_clone);
+    });
+
+    // Timer for 1s refresh
+    let network_list_clone = network_list.clone();
+    glib::timeout_add_seconds_local(1, move || {
+        let conn = dbus::blocking::Connection::new_system().unwrap();
+        refresh_wifi_listty(&conn, &network_list_clone);
+        glib::ControlFlow::Continue
+    });
+    let saved_list_clone2 = saved_list.clone();
+    let edit_details_stack_clone2 = edit_details_stack.clone();
+    let net_stack_clone2 = net_stack.clone();
+    glib::timeout_add_seconds_local(1, move || {
+        if net_stack_clone2.visible_child_name().as_deref() == Some("edit") {
+            // refresh_saved_connections(&saved_list_clone2, &edit_details_stack_clone2);
+        }
+        glib::ControlFlow::Continue
+    });
 
     // window ----------------------------------------------------------------------------------------------------------------------------------------- //
     let back_button_clone = back_button.clone();
