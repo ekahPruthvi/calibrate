@@ -356,7 +356,7 @@ fn show_notification(notif_box: &GtkBox, text: &str) {
 fn is_image_dark(image_path: &str) -> bool {
     let pixbuf = match gtk4::gdk::gdk_pixbuf::Pixbuf::from_file(image_path) {
         Ok(p) => p,
-        Err(_) => return true, // assume dark on error
+        Err(_) => return true, 
     };
 
     let width = pixbuf.width();
@@ -368,7 +368,6 @@ fn is_image_dark(image_path: &str) -> bool {
     let mut total_luminance = 0.0;
     let mut count = 0;
 
-    // Sample every 10th pixel (for speed)
     let sample_step = 10;
 
     for y in (0..height).step_by(sample_step) {
@@ -643,6 +642,12 @@ fn load_css() {
         .wall_s scrollbar trough {
             background-color: transparent;
             border-radius: 10px;
+        }
+
+        .termbox {
+            padding: 0px;
+            background-color: #00BC7F;
+            border: 5px solid rgb(5, 148, 122);
         }
 
         .display_win scrollbar {
@@ -1640,42 +1645,28 @@ BBBBB++++++++++++++++BBBBBB", "startup", "Shell configs >> Startup sound setting
     let vte_box = GtkBox::new(Orientation::Vertical, 0);
     vte_box.set_hexpand(true);
     vte_box.set_vexpand(true);
-    vte_box.set_halign(gtk4::Align::Center);
-    vte_box.set_valign(gtk4::Align::Center);
-    vte_box.set_css_classes(&["wall_s"]);
+    vte_box.set_halign(gtk4::Align::Fill);
+    vte_box.set_valign(gtk4::Align::Fill);
+    vte_box.set_css_classes(&["termbox"]);
 
     let vte_term = Terminal::default();
+    vte_term.set_vexpand(true);
+    vte_term.set_hexpand(true);
     let fg = gtk4::gdk::RGBA::new(0.0, 1.0, 0.66, 1.0);
     let bg = gtk4::gdk::RGBA::new(0.0, 0.0, 0.0, 1.0);
 
     let palette_owned: Vec<gtk4::gdk::RGBA> = vec![
-        bg.clone(),   // Black
-        bg.clone(), // Red (here it's green)
-        fg.clone(),   // Green
-        fg.clone(),   // Yellow
-        fg.clone(),   // Blue
-        fg.clone(),   // Magenta
-        fg.clone(),   // Cyan
-        fg.clone(),   // White
+        gtk4::gdk::RGBA::new(0.00, 0.40, 0.27, 1.0),
+        gtk4::gdk::RGBA::new(0.00, 0.49, 0.32, 1.0),
+        gtk4::gdk::RGBA::new(0.00, 0.57, 0.38, 1.0),
+        gtk4::gdk::RGBA::new(0.00, 0.66, 0.44, 1.0),
+        gtk4::gdk::RGBA::new(0.00, 0.74, 0.50, 1.0),
+        gtk4::gdk::RGBA::new(0.00, 0.83, 0.55, 1.0),
+        gtk4::gdk::RGBA::new(0.00, 0.91, 0.61, 1.0),
+        gtk4::gdk::RGBA::new(0.00, 1.00, 0.67, 1.0),
     ];
     let palette: Vec<&gtk4::gdk::RGBA> = palette_owned.iter().collect();
     vte_term.set_colors(Some(&fg), Some(&bg), &palette);
-
-    // vte_term.spawn_async(
-    //     PtyFlags::DEFAULT,
-    //     None,      
-    //     &["nmtui", "edit"],          
-    //     &[],            
-    //     gtk4::glib::SpawnFlags::DEFAULT,
-    //     || {},               
-    //     -1,                      
-    //     None::<&gtk4::gio::Cancellable>,  
-    //     move |res: Result<gtk4::glib::Pid, gtk4::glib::Error>| {
-    //         if let Err(e) = res {
-    //             eprintln!("Failed to spawn terminal process: {}", e);
-    //         }
-    //     },
-    // );
 
     vte_box.append(&vte_term);
     net_stack.add_titled(&network_home, Some("home"), "Network Home");
@@ -1688,6 +1679,21 @@ BBBBB++++++++++++++++BBBBBB", "startup", "Shell configs >> Startup sound setting
 
     
     nm_edit_button.connect_clicked(move |_| {
+        vte_term.spawn_async(
+            PtyFlags::DEFAULT,
+            None,      
+            &["nmtui", "edit"],          
+            &[],            
+            gtk4::glib::SpawnFlags::DEFAULT,
+            || {},               
+            -1,                      
+            None::<&gtk4::gio::Cancellable>,  
+            move |res: Result<gtk4::glib::Pid, gtk4::glib::Error>| {
+                if let Err(e) = res {
+                    eprintln!("Failed to spawn terminal process: {}", e);
+                }
+            },
+        );
         if let Some(stack) = stack_weak.upgrade() {    
             stack.set_visible_child_name("edit");
             typing_effect(&page_title_clone_edit, "network settings >> edit saved connections", 10);
