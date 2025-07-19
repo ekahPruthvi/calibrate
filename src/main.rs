@@ -302,20 +302,21 @@ fn setup_switch(theme_switch: &Switch) {
 }
 
 fn is_notifications_sound() -> bool {
-    let output = Command::new("sh")
-        .arg("-c")
-        .arg("cynage -n")
+    let output = Command::new("cynagectl")
+        .arg("-n")
         .output();
-
     if let Ok(output) = output {
-        let prefer_output = String::from_utf8_lossy(&output.stdout).trim().to_string();
-        return prefer_output != "toggle-on";
+        let prefer_output = String::from_utf8_lossy(&output.stdout)
+            .trim()
+            .to_string();
+        return prefer_output == "toggle-on";
     }
-    true  
+    false
 }
 
 fn setup_sound_switch(switch: &Switch) {
     let is_on = is_notifications_sound();
+    eprint!("{}", is_on);
     switch.set_active(is_on);
 
     switch.connect_state_set(|_, state| {
@@ -324,10 +325,11 @@ fn setup_sound_switch(switch: &Switch) {
         } else {
             "cynagectl -n false"
         };
+        let _ = Command::new("sh")
+            .arg("-c")
+            .arg(cmd)
+            .spawn();
 
-        // Run the command
-        let _ = Command::new("sh").arg("-c").arg(cmd).spawn();
-        // Allow the state change
         gtk4::glib::Propagation::Proceed
     });
 }
@@ -1476,9 +1478,7 @@ BBBBB++++++++++++++++BBBBBB", "startup", "Shell configs >> Startup sound setting
         .output();
     if let Ok(output) = output {
         let prefer_output = String::from_utf8_lossy(&output.stdout).trim().to_string();
-        if prefer_output != "'prefer-dark'" {
-            theme_switch.set_state(true);
-        }
+        theme_switch.set_state(prefer_output == "'prefer-light'");
     }
 
 
@@ -1492,15 +1492,12 @@ BBBBB++++++++++++++++BBBBBB", "startup", "Shell configs >> Startup sound setting
     notiv_sound_switch.set_halign(gtk4::Align::Start);
     setup_sound_switch(&notiv_sound_switch);
 
-    let output = Command::new("sh")
-        .arg("-c")
-        .arg("cynagectl -n")
+    let output = Command::new("cynagectl")
+        .arg("-n")
         .output();
     if let Ok(output) = output {
         let prefer_output = String::from_utf8_lossy(&output.stdout).trim().to_string();
-        if prefer_output != "toggle-on" {
-            notiv_sound_switch.set_state(true);
-        }
+        notiv_sound_switch.set_state(prefer_output == "toggle-on");
     }
     
     switch_grid.attach(&notiv_sound_label, 0, 1, 1, 1);
@@ -1589,6 +1586,10 @@ BBBBB++++++++++++++++BBBBBB", "startup", "Shell configs >> Startup sound setting
     let net_stack = Stack::new();
     
     let network_home = GtkBox::new(Orientation::Vertical, 0);
+    network_home.set_vexpand(true);
+    network_home.set_hexpand(true);
+    network_home.set_valign(gtk4::Align::Fill);
+    network_home.set_halign(gtk4::Align::Fill);
     let nm_ctrl = GtkBox::new(Orientation::Horizontal, 7);
     nm_ctrl.set_hexpand(true);
 
@@ -1614,9 +1615,12 @@ BBBBB++++++++++++++++BBBBBB", "startup", "Shell configs >> Startup sound setting
         .vscrollbar_policy(gtk4::PolicyType::Automatic)
         .hexpand(true)
         .vexpand(true)
+        .halign(gtk4::Align::Fill)
+        .valign(gtk4::Align::Fill)
         .build();
     let network_list = GtkBox::new(Orientation::Vertical, 10);
     nm_list_scroller.set_child(Some(&network_list));
+    nm_list_scroller.set_css_classes(&["display_win"]);
 
     network_home.append(&nm_ctrl);
     network_home.append(&nm_list_scroller);
@@ -1639,24 +1643,40 @@ BBBBB++++++++++++++++BBBBBB", "startup", "Shell configs >> Startup sound setting
     vte_box.set_vexpand(true);
     vte_box.set_halign(gtk4::Align::Center);
     vte_box.set_valign(gtk4::Align::Center);
+    vte_box.set_css_classes(&["wall_s"]);
 
     let vte_term = Terminal::default();
+    let fg = gtk4::gdk::RGBA::new(0.0, 1.0, 0.66, 1.0);
+    let bg = gtk4::gdk::RGBA::new(0.0, 0.0, 0.0, 1.0);
 
-    vte_term.spawn_async(
-        PtyFlags::DEFAULT,
-        None,      
-        &["nmtui", "edit"],          
-        &[],            
-        gtk4::glib::SpawnFlags::DEFAULT,
-        || {},               
-        -1,                      
-        None::<&gtk4::gio::Cancellable>,  
-        move |res: Result<gtk4::glib::Pid, gtk4::glib::Error>| {
-            if let Err(e) = res {
-                eprintln!("Failed to spawn terminal process: {}", e);
-            }
-        },
-    );
+    let palette_owned: Vec<gtk4::gdk::RGBA> = vec![
+        bg.clone(),   // Black
+        bg.clone(), // Red (here it's green)
+        fg.clone(),   // Green
+        fg.clone(),   // Yellow
+        fg.clone(),   // Blue
+        fg.clone(),   // Magenta
+        fg.clone(),   // Cyan
+        fg.clone(),   // White
+    ];
+    let palette: Vec<&gtk4::gdk::RGBA> = palette_owned.iter().collect();
+    vte_term.set_colors(Some(&fg), Some(&bg), &palette);
+
+    // vte_term.spawn_async(
+    //     PtyFlags::DEFAULT,
+    //     None,      
+    //     &["nmtui", "edit"],          
+    //     &[],            
+    //     gtk4::glib::SpawnFlags::DEFAULT,
+    //     || {},               
+    //     -1,                      
+    //     None::<&gtk4::gio::Cancellable>,  
+    //     move |res: Result<gtk4::glib::Pid, gtk4::glib::Error>| {
+    //         if let Err(e) = res {
+    //             eprintln!("Failed to spawn terminal process: {}", e);
+    //         }
+    //     },
+    // );
 
     vte_box.append(&vte_term);
     net_stack.add_titled(&network_home, Some("home"), "Network Home");
