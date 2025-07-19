@@ -316,7 +316,6 @@ fn is_notifications_sound() -> bool {
 
 fn setup_sound_switch(switch: &Switch) {
     let is_on = is_notifications_sound();
-    eprint!("{}", is_on);
     switch.set_active(is_on);
 
     switch.connect_state_set(|_, state| {
