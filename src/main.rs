@@ -819,6 +819,10 @@ fn load_css() {
             margin: 0px;
         }
 
+        .border_cell {
+            border: 2px solid rgba(5, 148, 122, 0.63);
+        }
+
     "#;
 
     let provider = CssProvider::new();
@@ -1614,7 +1618,6 @@ BBBBB++++++++++++++++BBBBBB", "startup", "Shell configs >> Startup sound setting
     nm_ctrl.append(&nm_toggle);
 
     let nm_list_scroller = ScrolledWindow::builder()
-        .min_content_height(150)
         .hscrollbar_policy(gtk4::PolicyType::Never)
         .vscrollbar_policy(gtk4::PolicyType::Automatic)
         .hexpand(true)
@@ -1624,22 +1627,10 @@ BBBBB++++++++++++++++BBBBBB", "startup", "Shell configs >> Startup sound setting
         .build();
     let network_list = GtkBox::new(Orientation::Vertical, 10);
     nm_list_scroller.set_child(Some(&network_list));
-    nm_list_scroller.set_css_classes(&["display_win"]);
+    nm_list_scroller.set_css_classes(&["display_win", "border_cell"]);
 
     network_home.append(&nm_ctrl);
     network_home.append(&nm_list_scroller);
-
-    let saved_scroller = ScrolledWindow::builder()
-        .min_content_height(140)
-        .hscrollbar_policy(gtk4::PolicyType::Never)
-        .vscrollbar_policy(gtk4::PolicyType::Automatic)
-        .hexpand(true)
-        .vexpand(true)
-        .build();
-    let saved_list = GtkBox::new(Orientation::Vertical, 0);
-    saved_scroller.set_child(Some(&saved_list));
-
-    network_home.append(&saved_scroller);
 
 
     let vte_box = GtkBox::new(Orientation::Vertical, 0);
@@ -1696,7 +1687,7 @@ BBBBB++++++++++++++++BBBBBB", "startup", "Shell configs >> Startup sound setting
         );
         if let Some(stack) = stack_weak.upgrade() {    
             stack.set_visible_child_name("edit");
-            typing_effect(&page_title_clone_edit, "network settings >> edit saved connections", 10);
+            typing_effect(&page_title_clone_edit, "network settings >> edit saved connections (use keyboard)", 10);
             back_button_edit.set_visible(true);
         }
     });
