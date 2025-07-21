@@ -1,10 +1,10 @@
 use gtk4::{
-    prelude::*, Switch, Frame, Application, ApplicationWindow, Box as GtkBox, Button, Image, Label, Orientation, Stack, GestureDrag,
-    Fixed, MessageDialog , gdk::Display , CssProvider, glib, ResponseType, Widget, DrawingArea, Dialog, FileChooserDialog, FileChooserAction, gdk, ScrolledWindow
+    prelude::*, Switch, Frame, Application, ApplicationWindow, Box as GtkBox, Button, Image, Label, Orientation, Stack,
+    Fixed, MessageDialog , gdk::Display , CssProvider, glib, ResponseType, FileChooserDialog, FileChooserAction, gdk, ScrolledWindow
 };
 use std::{cell::RefCell, fs, path::PathBuf, process::Command, rc::Rc};
 use std::collections::HashMap;
-use std::{borrow, env};
+use std::env;
 use std::io::{Write, BufReader, BufRead};
 use std::fs::OpenOptions;
 use std::path::Path;
@@ -13,7 +13,6 @@ use networkmanager::devices::Wireless;
 use dbus::blocking::Connection as DbusConnection;
 use vte4::Terminal;
 use vte4::TerminalExtManual;
-use vte4::prelude::*;
 use vte4::PtyFlags;
 
 struct MonitorInfo {
@@ -25,7 +24,6 @@ struct MonitorInfo {
 }
 
 const SCALE: f64 = 0.1;
-const SNAP_SIZE: i32 = 50; 
 
 fn add_class_recursive (widget: &gtk4::Widget, class_name: &str) {
     widget.add_css_class(class_name);
@@ -1077,44 +1075,39 @@ fn build_ui(app: &Application) {
 
     // Wallpaper page ---------------------------------------------------------------------------------------------------------------------------------- //
     let wallpaper_box = GtkBox::builder().orientation(Orientation::Vertical).spacing(0).build();
-
-    let output = Command::new("/home/ekah/.config/hypr/scripts/swwwallpaper.sh")
-        .output()
-        .expect("Failed to run swwwallpaper.sh");
-
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    let line = stdout.trim();
-
-    let parts: Vec<&str> = line.split(':').collect();
-    let display_name = parts[0].trim().to_string();
-
-    let rest = parts[1];
-    let resolution_part = rest.split(',').next().unwrap().trim().to_string();
-
-    let image_path_part = line.split("image:").nth(1).unwrap().trim();
-    let image_filename = image_path_part
-        .rsplit('/')
-        .next()
-        .unwrap()
-        .replace(".blur", "");
-
-    let display_label = gtk4::Label::new(Some(&format!("Display: {}", display_name)));
-    display_label.set_justify(gtk4::Justification::Right);
-    display_label.set_halign(gtk4::Align::End);
-    display_label.set_hexpand(true);
-    let resolution_label = gtk4::Label::new(Some(&format!("Resolution: {}", resolution_part)));
-    resolution_label.set_justify(gtk4::Justification::Right);
-    resolution_label.set_halign(gtk4::Align::End);
-    resolution_label.set_hexpand(true);
-
-    let image_path = format!("{}/.config/swww/cynage/{}", home_dir, image_filename);
-
-    let file = gtk4::gio::File::for_path(image_path);
-    let texture = gtk4::gdk::Texture::from_file(&file).unwrap();
-    let current_pic = gtk4::Picture::for_paintable(&texture);
-    let current_pic_ref = Rc::new(RefCell::new(current_pic.clone()));
-
     let current_wall = GtkBox::new(Orientation::Horizontal, 2);
+
+    let config_path = format!("{}/.config/swww/wall.ctl", home_dir);
+    let content = fs::read_to_string(&config_path)
+        .unwrap_or_else(|_| panic!("Failed to read {}", config_path));
+    
+    let mut current_pic_ref_opt: Option<Rc<RefCell<gtk4::Picture>>> = None;
+ 
+    if let Some(line) = content.lines().next() {
+        if let Some(path) = line.split('|').last() {
+            let abs_path = if path.starts_with("~/") {
+                format!("{}/{}", home_dir, &path[2..])
+            } else {
+                path.to_string()
+            };
+            let file = gtk4::gio::File::for_path(abs_path);
+            let texture = gtk4::gdk::Texture::from_file(&file).unwrap();
+            let current_pic = gtk4::Picture::for_paintable(&texture);
+            current_pic_ref_opt = Some(Rc::new(RefCell::new(current_pic.clone())));
+            current_wall.append(&current_pic);
+        }
+    }
+        
+    // let display_label = gtk4::Label::new(Some(&format!("Display: {}", display_name)));
+    // display_label.set_justify(gtk4::Justification::Right);
+    // display_label.set_halign(gtk4::Align::End);
+    // display_label.set_hexpand(true);
+    // let resolution_label = gtk4::Label::new(Some(&format!("Resolution: {}", resolution_part)));
+    // resolution_label.set_justify(gtk4::Justification::Right);
+    // resolution_label.set_halign(gtk4::Align::End);
+    // resolution_label.set_hexpand(true);
+
+
 
     let wall_info = GtkBox::new(Orientation::Vertical, 10);
     wall_info.set_hexpand(true);
@@ -1133,12 +1126,11 @@ fn build_ui(app: &Application) {
     wall_buttons.append(&add_wall);
     wall_buttons.append(&remove_wall);
 
-    wall_info.append(&display_label);
-    wall_info.append(&resolution_label);
+    // wall_info.append(&display_label);
+    // wall_info.append(&resolution_label);
     wall_info.append(&vdummy_forwallinfo);
     wall_info.append(&wall_buttons);
 
-    current_wall.append(&current_pic);
     current_wall.append(&wall_info);
     current_wall.set_widget_name("current_wall");
 
@@ -1224,80 +1216,83 @@ fn build_ui(app: &Application) {
         }
     };
 
-    add_walls_to_grid(&image_grid, &notif_box, &current_pic_ref);
-    let image_grid_clone = image_grid.clone();
-    let notif_box_clone = notif_box.clone();
-    let window_clone = window.clone();
-    add_wall.connect_clicked(move |_| {
-        let notif_box_clone = notif_box_clone.clone();
-        let curren_pic_ref_clone = current_pic_ref.clone();
-        let dialog = FileChooserDialog::new(
-            Some("Select wallpaper to add"),
-            Some(&window_clone),
-            FileChooserAction::Open,
-            &[("_Cancel", ResponseType::Cancel), ("_Add", ResponseType::Accept)],
-        );
-        dialog.set_css_classes(&["wall-dialog"]);
-        dialog.set_size_request(400, 800);
-        add_class_recursive(&dialog.upcast_ref(), "wall-dialog");
+    if let Some(current_pic_ref) = current_pic_ref_opt {
+        let current_pic_ref2 = current_pic_ref.clone();
+        add_walls_to_grid(&image_grid, &notif_box, &current_pic_ref);
+        let image_grid_clone = image_grid.clone();
+        let notif_box_clone = notif_box.clone();
+        let window_clone = window.clone();
+        add_wall.connect_clicked(move |_| {
+            let notif_box_clone = notif_box_clone.clone();
+            let curren_pic_ref_clone = current_pic_ref.clone();
+            let dialog = FileChooserDialog::new(
+                Some("Select wallpaper to add"),
+                Some(&window_clone),
+                FileChooserAction::Open,
+                &[("_Cancel", ResponseType::Cancel), ("_Add", ResponseType::Accept)],
+            );
+            dialog.set_css_classes(&["wall-dialog"]);
+            dialog.set_size_request(400, 800);
+            add_class_recursive(&dialog.upcast_ref(), "wall-dialog");
 
-        let image_grid_inner = image_grid_clone.clone();
-        dialog.connect_response(move |dialog, response| {
-            if response == ResponseType::Accept {
-                if let Some(file_path) = dialog.file().and_then(|f| f.path()) {
-                    let _ = Command::new("cynagectl")
-                        .args(["-w", "add", file_path.to_str().unwrap_or_default()])
-                        .spawn();
-                }
-            }
-            dialog.close();
-            add_walls_to_grid(&image_grid_inner, &notif_box_clone, &curren_pic_ref_clone);
-        });
-
-        dialog.show();
-    });
-    
-    let window_clone2 = window.clone();
-    let image_grid_clone = image_grid.clone();
-    let notif_box_clone2 = notif_box.clone();
-    let current_pic_ref2 = Rc::new(RefCell::new(current_pic.clone()));
-    remove_wall.connect_clicked(move |_| {
-        let notif_box_clone2 = notif_box_clone2.clone();
-        let curren_pic_ref_clone2 = current_pic_ref2.clone();
-        let dialog = FileChooserDialog::new(
-            Some("Select wallpaper to remove"),
-            Some(&window_clone2),
-            FileChooserAction::Open,
-            &[("_Cancel", ResponseType::Cancel), ("_Remove", ResponseType::Accept)],
-        );
-        dialog.set_css_classes(&["wall-dialog"]);
-        dialog.set_size_request(400, 800);
-        add_class_recursive(&dialog.upcast_ref(), "wall-dialog");
-
-        let image_grid_inner = image_grid_clone.clone();
-        if let Some(home_dir) = std::env::var_os("HOME") {
-            let start_path = Path::new(&home_dir).join(".config/swww/cynage/");
-            let _ = dialog.set_current_folder(Some(&gtk4::gio::File::for_path(start_path)));
-        }
-
-        dialog.connect_response(move |dialog, response| {
-            if response == ResponseType::Accept {
-                if let Some(file_path) = dialog.file().and_then(|f| f.path()) {
-                    if let Some(file_stem) = file_path.file_stem().and_then(|s| s.to_str()) {
+            let image_grid_inner = image_grid_clone.clone();
+            dialog.connect_response(move |dialog, response| {
+                if response == ResponseType::Accept {
+                    if let Some(file_path) = dialog.file().and_then(|f| f.path()) {
                         let _ = Command::new("cynagectl")
-                            .args(["-w", "remove", file_stem])
+                            .args(["-w", "add", file_path.to_str().unwrap_or_default()])
                             .spawn();
                     }
                 }
-            }
-            dialog.close();
-            add_walls_to_grid(&image_grid_inner, &notif_box_clone2, &curren_pic_ref_clone2);
+                dialog.close();
+                add_walls_to_grid(&image_grid_inner, &notif_box_clone, &curren_pic_ref_clone);
+            });
+            dialog.show();
         });
 
-        dialog.show();
-    });
+        let window_clone2 = window.clone();
+        let image_grid_clone = image_grid.clone();
+        let notif_box_clone2 = notif_box.clone();
+        let current_pic_ref2 = current_pic_ref2.clone();
+        remove_wall.connect_clicked(move |_| {
+            let notif_box_clone2 = notif_box_clone2.clone();
+            let curren_pic_ref_clone2 = current_pic_ref2.clone();
+            let dialog = FileChooserDialog::new(
+                Some("Select wallpaper to remove"),
+                Some(&window_clone2),
+                FileChooserAction::Open,
+                &[("_Cancel", ResponseType::Cancel), ("_Remove", ResponseType::Accept)],
+            );
+            dialog.set_css_classes(&["wall-dialog"]);
+            dialog.set_size_request(400, 800);
+            add_class_recursive(&dialog.upcast_ref(), "wall-dialog");
 
+            let image_grid_inner = image_grid_clone.clone();
+            if let Some(home_dir) = std::env::var_os("HOME") {
+                let start_path = Path::new(&home_dir).join(".config/swww/cynage/");
+                let _ = dialog.set_current_folder(Some(&gtk4::gio::File::for_path(start_path)));
+            }
 
+            dialog.connect_response(move |dialog, response| {
+                if response == ResponseType::Accept {
+                    if let Some(file_path) = dialog.file().and_then(|f| f.path()) {
+                        if let Some(file_stem) = file_path.file_stem().and_then(|s| s.to_str()) {
+                            let _ = Command::new("cynagectl")
+                                .args(["-w", "remove", file_stem])
+                                .spawn();
+                        }
+                    }
+                }
+                dialog.close();
+                add_walls_to_grid(&image_grid_inner, &notif_box_clone2, &curren_pic_ref_clone2);
+            });
+
+            dialog.show();
+        });
+
+    }
+   
+    
     stack.add_titled(&wallpaper_box, Some("wallpaper"), "Wallpaper");
 
     // shell settings ---------------------------------------------------------------------------------------------------------------------------------- //
