@@ -1297,7 +1297,7 @@ fn build_ui(app: &Application) {
 
     // shell settings ---------------------------------------------------------------------------------------------------------------------------------- //
     
-    let shell_settings_scroller: gtk4::ScrolledWindow = gtk4::ScrolledWindow::new();
+    let shell_settings_scroller = gtk4::ScrolledWindow::new();
     shell_settings_scroller.set_policy(gtk4::PolicyType::Automatic, gtk4::PolicyType::Never);
 
     let shell_stack = Stack::builder()
