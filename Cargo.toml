@@ -10,3 +10,7 @@ dbus = "0.9.7"
 gtk4 = "0.9.6"
 networkmanager = "0.5.0"
 vte4 = "0.8.0"
+
+[profile.release]
+opt-level = 3
+lto = true
