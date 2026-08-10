@@ -261,7 +261,7 @@ const SHORTCUTS: &[Shortcut] = &[
 fn build_home_page(stack: &Stack, username: &str) -> ScrolledWindow {
     let content = GtkBox::new(Orientation::Vertical, 20);
     content.append(&page_header(
-        &format!("Welcome, {}", username),
+        &format!("Hello,\n {}", username),
         "Jump straight into a settings category below.",
     ));
 
