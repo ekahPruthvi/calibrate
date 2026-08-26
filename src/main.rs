@@ -1,9 +1,8 @@
-use gtk4::builders::StackSwitcherBuilder;
 use gtk4::prelude::*;
 use gtk4::{
-    Application, ApplicationWindow, Box as GtkBox, Button, HeaderBar,
-    Label, ListBox, ListBoxRow, Orientation, ScrolledWindow, Stack,
-    StackSwitcher, Separator, Switch, Scale, SpinButton, Adjustment,
+    Application, ApplicationWindow, Box as GtkBox, Button, MenuButton, Popover,
+    Label, ListBox, ListBoxRow, Orientation, ScrolledWindow, Stack, Overlay, 
+    StackSwitcher, Separator, Switch, Scale, SpinButton, Adjustment, GestureClick,
     ComboBoxText, Frame, Grid, Align, CssProvider,
 };
 use std::fs;
@@ -205,11 +204,11 @@ fn page_scroller(content: &GtkBox) -> ScrolledWindow {
 fn page_header(title: &str, subtitle: &str) -> GtkBox {
     let header = GtkBox::new(Orientation::Vertical, 4);
     let title_lbl = Label::new(Some(title));
-    title_lbl.add_css_class("page-title");
+    title_lbl.add_css_class("page-subtitle");
     title_lbl.set_halign(Align::Start);
 
     let subtitle_lbl = Label::new(Some(subtitle));
-    subtitle_lbl.add_css_class("page-subtitle");
+    subtitle_lbl.add_css_class("page-title");
     subtitle_lbl.set_halign(Align::Start);
 
     header.append(&title_lbl);
@@ -254,15 +253,14 @@ const SHORTCUTS: &[Shortcut] = &[
     Shortcut { id: "sound", title: "Sound", desc: "Volume, output device, alerts" },
     Shortcut { id: "network", title: "Network", desc: "Wi-Fi, VPN, proxy settings" },
     Shortcut { id: "appearance", title: "Appearance", desc: "Theme, accent color, fonts" },
-    Shortcut { id: "privacy", title: "Privacy", desc: "Permissions, location, diagnostics" },
     Shortcut { id: "about", title: "About", desc: "System info and version" },
 ];
 
 fn build_home_page(stack: &Stack, username: &str) -> ScrolledWindow {
     let content = GtkBox::new(Orientation::Vertical, 20);
     content.append(&page_header(
-        &format!("Hello,\n {}", username),
-        "Jump straight into a settings category below.",
+        "Hello,",
+        &format!("{}", username),
     ));
 
     let grid = Grid::builder()
@@ -527,9 +525,9 @@ fn build_ui(app: &Application, initial_tab: Option<String>) {
     let about_page = build_about_page(&username);
     stack.add_titled(&about_page, Some("about"), "About");
 
-    let sidebar = StackSwitcher::new();
-    sidebar.set_stack(Some(&stack));
-    sidebar.set_size_request(180, -1);
+    // let sidebar = StackSwitcher::new();
+    // sidebar.set_stack(Some(&stack));
+    // sidebar.set_size_request(180, -1);
 
     // let sidebar_scroller = ScrolledWindow::builder()
     //     .vscrollbar_policy(gtk4::PolicyType::Never)
@@ -542,9 +540,94 @@ fn build_ui(app: &Application, initial_tab: Option<String>) {
     //     .width_request(100)
     //     .build();
 
-    let main_box = GtkBox::new(Orientation::Vertical, 0);
+    // Dropdown list of tabs shown inside the popover.
+    let tab_list = ListBox::new();
 
-    main_box.append(&stack);
+    let tab_titles: &[(&str, &str)] = &[
+        ("home", "Home"),
+        ("display", "Display"),
+        ("sound", "Sound"),
+        ("network", "Network"),
+        ("appearance", "Appearance"),
+        ("about", "About"),
+    ];
+
+    for (_id, title) in tab_titles {
+        let row_label = Label::new(Some(title));
+        row_label.set_halign(Align::Start);
+        row_label.set_margin_top(8);
+        row_label.set_margin_bottom(8);
+        row_label.set_margin_start(12);
+        row_label.set_margin_end(12);
+
+        let row = ListBoxRow::new();
+        row.set_child(Some(&row_label));
+        tab_list.append(&row);
+    }
+
+    let nav = Popover::builder()
+        .child(&tab_list)
+        .has_arrow(false)
+        .build();
+
+    let menu_button = MenuButton::builder()
+        .label("Menu")
+        .halign(Align::Center)
+        .valign(Align::Start)
+        .popover(&nav)
+        .build();
+
+    tab_list.set_selection_mode(gtk4::SelectionMode::Single);
+
+    let dragmov = GestureClick::new();
+
+    dragmov.connect_pressed(|gesture, _n_press, x, y| {
+        if gesture.current_button() != gtk4::gdk::BUTTON_PRIMARY {
+            return;
+        }
+
+        if let Some(widget) = gesture.widget() {
+            if let Some(root) = widget.root() {
+                if let Some(native) = root.dynamic_cast_ref::<gtk4::Native>() {
+                    if let Some(toplevel) = native.surface().and_then(|s| s.dynamic_cast::<gtk4::gdk::Toplevel>().ok()) {
+                        if let Some(device) = gesture.device() {
+                            let button = gesture.current_button();
+
+                            toplevel.begin_move(
+                                &device,
+                                button as i32,
+                                x + widget.allocation().x() as f64,
+                                y + widget.allocation().y() as f64,
+                                gesture.current_event_time(),
+                            );
+                        }
+                    }
+                }
+            }
+        }
+    });
+
+    {
+        let stack = stack.clone();
+        let nav = nav.clone();
+        let tab_ids: Vec<&'static str> = tab_titles.iter().map(|(id, _)| *id).collect();
+        tab_list.connect_row_activated(move |_, row| {
+            let index = row.index();
+            if index >= 0 {
+                if let Some(id) = tab_ids.get(index as usize) {
+                    stack.set_visible_child_name(id);
+                }
+            }
+            nav.popdown();
+        });
+    }
+
+    let main_box = Overlay::new();
+
+    main_box.add_controller(dragmov);
+    
+    main_box.add_overlay(&menu_button);
+    main_box.set_child(Some(&stack));
     // main_box.append(&sidebar_scroller);
     
 
