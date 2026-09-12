@@ -1,16 +1,30 @@
 use gtk4::prelude::*;
 use gtk4::{
-    Application, ApplicationWindow, Box as GtkBox, Button, MenuButton, Popover,
-    Label, ListBox, ListBoxRow, Orientation, ScrolledWindow, Stack, Overlay, 
-    StackSwitcher, Separator, Switch, Scale, SpinButton, Adjustment, GestureClick,
-    ComboBoxText, Frame, Grid, Align, CssProvider,
+    Application, ApplicationWindow, Box as GtkBox, Button, Label, ListBox, ListBoxRow,
+    Orientation, ScrolledWindow, SearchEntry, Stack, Separator, Switch, Scale, SpinButton,
+    Adjustment, ComboBoxText, Frame, Grid, Align, CssProvider, DrawingArea, gdk_pixbuf::Pixbuf,
 };
 use std::fs;
+use std::rc::Rc;
 
 const APP_ID: &str = "ekah.scu.calibrate";
 
 const TAB_IDS: &[&str] = &[
     "home", "display", "sound", "network", "appearance", "about",
+];
+
+struct MenuItem {
+    id: &'static str,
+    title: &'static str,
+}
+
+const MENU_ITEMS: &[MenuItem] = &[
+    MenuItem { id: "home", title: "Home" },
+    MenuItem { id: "display", title: "Display" },
+    MenuItem { id: "sound", title: "Sound" },
+    MenuItem { id: "network", title: "Network" },
+    MenuItem { id: "appearance", title: "Appearance" },
+    MenuItem { id: "about", title: "About" },
 ];
 
 fn read_username() -> String {
@@ -64,39 +78,75 @@ fn load_css() {
     css.load_from_data(
         r#"
         window {
-            background-color: #1a1a1a00;
-        }
-        
-        stacksidebar {
-            background-color: #14161f;
-            border-right: 1px solid #22242f;
+            background-color: #212020;
         }
 
-        stacksidebar row {
+        .right-panel {
+            all: unset;
+            min-width: 150px;
+            padding: 10px 20px 10px 10px;
+            border-radius: 15px;
+            border: 2px solid transparent;
+            background-image: linear-gradient(rgb(27, 27, 27), rgb(27, 27, 27)),
+                                linear-gradient(0deg, rgba(251, 251, 251, 0.06), rgba(251, 251, 251, 0.06));
+            background-origin: border-box;
+            background-clip: padding-box, border-box;
+            box-shadow: rgba(7, 7, 7, 0.26) 0px 3px 8px;    
+
+            transition: all 200ms cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        .menu-search {
+            margin: 12px 12px 6px 12px;
+            background-color: #1c1e2900;
+            border: 1px solid #f8f8f935;
+            border-radius: 50px;
+            color: #d6d6dd;
+        }
+
+        .menu-search image,
+        .menu-search entry {
+            color: #fefefec9;
+        }
+
+        .menu-list {
+            background-color: transparent;
+            padding: 5px;   
+        }
+
+        .menu-list row {
+            all: unset;
             padding: 10px 12px;
             border-radius: 8px;
-            margin: 2px 6px;
-            color: #a6a6b3;
+            color: #ffffffd2;
+            background-color: transparent;
+            border: 1px solid transparent;
         }
 
-        stacksidebar row:selected {
-            background-color: #2a2d3d;
+        .menu-list row:selected {
+            background-color: #f9f9f931;
             color: #ffffff;
         }
 
-        stacksidebar row:hover {
-            background-color: #1c1e29;
+        .menu-list row:hover {
+            background-color: #ffffff00;
+            border: 1px solid #ffffff2f;
+        }
+
+        .page-header-bar {
+            padding: 10px;
+            border-top: 1px solid #ffffff17;
         }
 
         .settings-page {
-            background-color: #1a1a1a7d;
+            background-color: #ece4e400;
             padding: 24px;
         }
 
         .page-title {
-            font-size: 20px;
-            font-weight: 700;
-            color: #f2f2f5;
+            font-size: 12px;
+            font-weight: 400;
+            color: #f2f2f56e;
         }
 
         .page-subtitle {
@@ -129,10 +179,22 @@ fn load_css() {
             transition: all 200ms cubic-bezier(0.4, 0, 0.2, 1);
         }
         
+        .usrcard {
+            all: unset;
+            min-width: 150px;
+            padding: 10px;
+            border-radius: 50px;
+            border: 1px solid #0e0d0dea;
+            background-color: rgba(255, 255, 255, 0.88);
+            box-shadow: rgba(0, 0, 0, 0.24) 0px 3px 8px;
+
+            transition: all 200ms cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
         .shortcut-card:active {
             border: none;
         }
-        
+
         .shortcut-card:hover {
             background-color: #1d2030;
         }
@@ -182,6 +244,12 @@ fn load_css() {
             background-color: #14161f;
             border-radius: 8px;
         }
+
+        .usrname {
+            font-size: 26px;
+            font-weight: 500;
+            color: black;
+        }
         "#,
     );
     gtk4::style_context_add_provider_for_display(
@@ -201,19 +269,54 @@ fn page_scroller(content: &GtkBox) -> ScrolledWindow {
         .build()
 }
 
-fn page_header(title: &str, subtitle: &str) -> GtkBox {
-    let header = GtkBox::new(Orientation::Vertical, 4);
-    let title_lbl = Label::new(Some(title));
-    title_lbl.add_css_class("page-subtitle");
-    title_lbl.set_halign(Align::Start);
+fn build_page_header() -> (GtkBox, Label, Label) {
+    let header = GtkBox::new(Orientation::Horizontal, 4);
+    header.add_css_class("page-header-bar");
 
-    let subtitle_lbl = Label::new(Some(subtitle));
-    subtitle_lbl.add_css_class("page-title");
+    let title_lbl = Label::new(None);
+    title_lbl.add_css_class("page-title");
+    title_lbl.set_halign(Align::Start);
+    // title_lbl.set_justify(gtk4::Justification::Right);
+
+    let subtitle_lbl = Label::new(None);
+    subtitle_lbl.add_css_class("page-subtitle");
     subtitle_lbl.set_halign(Align::Start);
 
     header.append(&title_lbl);
-    header.append(&subtitle_lbl);
-    header
+    // header.append(&subtitle_lbl);
+    header.set_margin_start(10);
+
+    (header, title_lbl, subtitle_lbl)
+}
+
+fn page_meta(id: &str, username: &str) -> (String, String) {
+    match id {
+        "home" => (
+            format!("Porfile: [{}] - Calibrate by SCU", username),
+            "Jump straight into a settings category below.".to_string(),
+        ),
+        "display" => (
+            "Display".to_string(),
+            "Configure how your screen looks and behaves.".to_string(),
+        ),
+        "sound" => (
+            "Sound".to_string(),
+            "Control audio input, output, and alerts.".to_string(),
+        ),
+        "network" => (
+            "Network".to_string(),
+            "Manage Wi-Fi, VPN, and connection settings.".to_string(),
+        ),
+        "appearance" => (
+            "Appearance".to_string(),
+            "Personalize the look and feel of your desktop.".to_string(),
+        ),
+        "about" => (
+            "About".to_string(),
+            "System and version information.".to_string(),
+        ),
+        _ => ("Settings".to_string(), String::new()),
+    }
 }
 
 fn labeled_row(label_text: &str, caption: &str, widget: &impl IsA<gtk4::Widget>) -> GtkBox {
@@ -253,19 +356,106 @@ const SHORTCUTS: &[Shortcut] = &[
     Shortcut { id: "sound", title: "Sound", desc: "Volume, output device, alerts" },
     Shortcut { id: "network", title: "Network", desc: "Wi-Fi, VPN, proxy settings" },
     Shortcut { id: "appearance", title: "Appearance", desc: "Theme, accent color, fonts" },
+    Shortcut { id: "privacy", title: "Privacy", desc: "Permissions, location, diagnostics" },
     Shortcut { id: "about", title: "About", desc: "System info and version" },
 ];
 
-fn build_home_page(stack: &Stack, username: &str) -> ScrolledWindow {
-    let content = GtkBox::new(Orientation::Vertical, 20);
-    content.append(&page_header(
-        "Hello,",
-        &format!("{}", username),
-    ));
+fn build_round_user_icon(pixbuf: Pixbuf, size: i32) -> DrawingArea {
+    let icon = DrawingArea::new();
+    icon.set_content_width(size);
+    icon.set_content_height(size);
 
+    icon.set_draw_func(move |_, cr, w, h| {
+        let w = w as f64;
+        let h = h as f64;
+        let cx = w / 2.0;
+        let cy = h / 2.0;
+        let r  = w / 2.0;
+
+        cr.arc(cx, cy, r, 0.0, 2.0 * std::f64::consts::PI);
+        cr.clip();
+
+        let pb = pixbuf.scale_simple(w as i32, h as i32, gtk4::gdk_pixbuf::InterpType::Bilinear).unwrap();
+        cr.set_source_pixbuf(&pb, 0.0, 0.0);
+        cr.paint().unwrap();
+
+        let shine = gtk4::cairo::LinearGradient::new(
+            cx * 0.35, cy * 0.10,
+            cx * 0.80, cy * 0.75,
+        );
+        shine.add_color_stop_rgba(0.00, 1.0, 1.0, 1.0, 0.55);
+        shine.add_color_stop_rgba(0.40, 1.0, 1.0, 1.0, 0.18);
+        shine.add_color_stop_rgba(1.00, 1.0, 1.0, 1.0, 0.00);
+
+        cr.set_source(&shine).unwrap();
+
+        cr.save().unwrap();
+        cr.translate(cx, cy);
+        cr.scale(r * 0.85, r * 0.55);
+        cr.translate(-r * 0.08, -r * 0.80);
+        cr.arc(0.0, 0.0, 1.0, 0.0, 2.0 * std::f64::consts::PI);
+        cr.restore().unwrap();
+        cr.fill().unwrap();
+
+        let rim = gtk4::cairo::LinearGradient::new(cx * 0.4, 0.0, cx * 1.6, r * 0.18);
+        rim.add_color_stop_rgba(0.0, 1.0, 1.0, 1.0, 0.00);
+        rim.add_color_stop_rgba(0.5, 1.0, 1.0, 1.0, 0.45);
+        rim.add_color_stop_rgba(1.0, 1.0, 1.0, 1.0, 0.00);
+        cr.set_source(&rim).unwrap();
+        cr.arc(cx, cy, r - 0.5, std::f64::consts::PI * 1.15, std::f64::consts::PI * 1.85);
+        cr.set_line_width(1.5);
+        cr.stroke().unwrap();
+    });
+
+    icon
+}
+
+fn build_home_page(stack: &Stack) -> ScrolledWindow {
+    let content = GtkBox::new(Orientation::Vertical, 20);
+
+
+    let final_path = String::from("/usr/share/octobacillus/usericon.png"); 
+    let pixbuf = Pixbuf::from_file(&final_path).unwrap();
+    let usricon = build_round_user_icon(pixbuf.clone(), 40);
+
+    let usrname = match std::fs::read_to_string("/usr/share/octobacillus/user.octo") {
+        Ok(content) => content,
+        Err(err) => {
+            eprintln!("[ctrl] Error reading file: {}", err);
+            "name = user4.0".to_string()
+        }
+    };
+
+    let name = usrname
+        .lines()
+        .find(|line| line.trim().starts_with("name"))
+        .and_then(|line| line.split_once("="))
+        .map(|(_, value)| value.trim().to_string())
+        .unwrap_or_else(|| "user4.0".to_string());
+
+    let usrbox = GtkBox::builder()
+        .orientation(Orientation::Horizontal)
+        .css_classes(["usrcard"])
+        .spacing(10)
+        .hexpand(false)
+        .halign(Align::Start)
+        .build();
+
+    usrbox.append(&usricon);
+    usrbox.append(
+        &Label::builder()
+            .label(&name)
+            .css_classes(["usrname"])
+            .justify(gtk4::Justification::Right)
+            .margin_start(10)
+            .build()
+    );
+    
     let grid = Grid::builder()
         .row_spacing(14)
         .column_spacing(14)
+        // .vexpand(true)
+        // .valign(Align::End)
         .column_homogeneous(true)
         .build();
 
@@ -301,13 +491,28 @@ fn build_home_page(stack: &Stack, username: &str) -> ScrolledWindow {
         grid.attach(&button, col, row, 1, 1);
     }
 
+    content.append(&usrbox);
     content.append(&grid);
+
+    // let bg = gtk4::Image::from_file("/var/lib/cynager/icons/cog_bg.svg");
+    // bg.set_pixel_size(500);
+    // bg.set_hexpand(true);
+    // bg.set_vexpand(true);
+    // bg.set_halign(Align::Start);
+    // bg.set_valign(Align::End);
+
+    // let over = gtk4::Overlay::new();
+    // over.set_child(Some(&bg));
+    // over.add_overlay(&content);
+
+    // let overbox = GtkBox::new(Orientation::Vertical, 0);
+    // overbox.append(&over);
+
     page_scroller(&content)
 }
 
 fn build_display_page() -> ScrolledWindow {
     let content = GtkBox::new(Orientation::Vertical, 16);
-    content.append(&page_header("Display", "Configure how your screen looks and behaves."));
 
     let frame = Frame::new(None);
     let list = ListBox::new();
@@ -347,7 +552,6 @@ fn build_display_page() -> ScrolledWindow {
 
 fn build_sound_page() -> ScrolledWindow {
     let content = GtkBox::new(Orientation::Vertical, 16);
-    content.append(&page_header("Sound", "Control audio input, output, and alerts."));
 
     let frame = Frame::new(None);
     let list = ListBox::new();
@@ -386,7 +590,6 @@ fn build_sound_page() -> ScrolledWindow {
 
 fn build_network_page() -> ScrolledWindow {
     let content = GtkBox::new(Orientation::Vertical, 16);
-    content.append(&page_header("Network", "Manage Wi-Fi, VPN, and connection settings."));
 
     let frame = Frame::new(None);
     let list = ListBox::new();
@@ -422,7 +625,6 @@ fn build_network_page() -> ScrolledWindow {
 
 fn build_appearance_page() -> ScrolledWindow {
     let content = GtkBox::new(Orientation::Vertical, 16);
-    content.append(&page_header("Appearance", "Personalize the look and feel of your desktop."));
 
     let frame = Frame::new(None);
     let list = ListBox::new();
@@ -462,7 +664,6 @@ fn build_appearance_page() -> ScrolledWindow {
 
 fn build_about_page(username: &str) -> ScrolledWindow {
     let content = GtkBox::new(Orientation::Vertical, 16);
-    content.append(&page_header("About", "System and version information."));
 
     let frame = Frame::new(None);
     let list = ListBox::new();
@@ -491,6 +692,71 @@ fn build_about_page(username: &str) -> ScrolledWindow {
     page_scroller(&content)
 }
 
+fn build_right_panel(stack: &Stack) -> (GtkBox, ListBox) {
+    let panel = GtkBox::new(Orientation::Vertical, 0);
+    panel.add_css_class("right-panel");
+    panel.set_size_request(220, -1);
+    panel.set_margin_top(10);
+    panel.set_margin_bottom(10);
+    panel.set_margin_start(10);
+    panel.set_margin_end(10);
+    panel.set_hexpand(false);
+
+    let search = SearchEntry::new();
+    search.add_css_class("menu-search");
+    search.set_placeholder_text(Some("Search settings"));
+
+    let list = ListBox::new();
+    list.set_selection_mode(gtk4::SelectionMode::Single);
+    list.add_css_class("menu-list");
+
+    for item in MENU_ITEMS {
+        let row = ListBoxRow::new();
+        row.set_widget_name(item.id);
+        row.set_margin_bottom(5);
+
+        let label = Label::new(Some(item.title));
+        label.set_halign(Align::Start);
+        row.set_child(Some(&label));
+
+        list.append(&row);
+    }
+
+    let search_for_filter = search.clone();
+    list.set_filter_func(move |row| {
+        let query = search_for_filter.text().to_lowercase();
+        if query.is_empty() {
+            return true;
+        }
+        row.child()
+            .and_then(|w| w.downcast::<Label>().ok())
+            .map(|lbl| lbl.text().to_lowercase().contains(&query))
+            .unwrap_or(true)
+    });
+
+    let list_for_search = list.clone();
+    search.connect_search_changed(move |_| {
+        list_for_search.invalidate_filter();
+    });
+
+    let stack_for_activate = stack.clone();
+    list.connect_row_activated(move |_, row| {
+        stack_for_activate.set_visible_child_name(&row.widget_name());
+    });
+
+    let list_scroller = ScrolledWindow::builder()
+        .vscrollbar_policy(gtk4::PolicyType::Automatic)
+        .hscrollbar_policy(gtk4::PolicyType::Never)
+        .vexpand(true)
+        .child(&list)
+        .build();
+
+    panel.append(&search);
+    panel.append(&list_scroller);
+
+    (panel, list)
+}
+
 fn build_ui(app: &Application, initial_tab: Option<String>) {
     load_css();
 
@@ -499,15 +765,16 @@ fn build_ui(app: &Application, initial_tab: Option<String>) {
     let window = ApplicationWindow::builder()
         .application(app)
         .title("Calibrate")
-        .default_width(1000)
-        .default_height(600)
+        .default_width(1500)
+        .default_height(900)
         .build();
 
     let stack = Stack::new();
     stack.set_transition_type(gtk4::StackTransitionType::SlideLeftRight);
     stack.set_transition_duration(300);
+    stack.set_margin_top(20);
 
-    let home_page = build_home_page(&stack, &username);
+    let home_page = build_home_page(&stack);
     stack.add_titled(&home_page, Some("home"), "Home");
 
     let display_page = build_display_page();
@@ -525,116 +792,52 @@ fn build_ui(app: &Application, initial_tab: Option<String>) {
     let about_page = build_about_page(&username);
     stack.add_titled(&about_page, Some("about"), "About");
 
-    // let sidebar = StackSwitcher::new();
-    // sidebar.set_stack(Some(&stack));
-    // sidebar.set_size_request(180, -1);
+    let (header, title_lbl, subtitle_lbl) = build_page_header();
 
-    // let sidebar_scroller = ScrolledWindow::builder()
-    //     .vscrollbar_policy(gtk4::PolicyType::Never)
-    //     .child(&sidebar)
-    //     .hexpand(true)
-    //     .margin_bottom(10)
-    //     .margin_start(30)
-    //     .margin_end(30)
-    //     .height_request(20)
-    //     .width_request(100)
-    //     .build();
+    let (right_panel, menu_list) = build_right_panel(&stack);
 
-    // Dropdown list of tabs shown inside the popover.
-    let tab_list = ListBox::new();
+    let sync_for_change: Rc<dyn Fn(&str)> = {
+        let title_lbl = title_lbl.clone();
+        let subtitle_lbl = subtitle_lbl.clone();
+        let username = username.clone();
+        let menu_list = menu_list.clone();
+        Rc::new(move |id: &str| {
+            let (title, subtitle) = page_meta(id, &username);
+            title_lbl.set_text(&title);
+            subtitle_lbl.set_text(&subtitle);
 
-    let tab_titles: &[(&str, &str)] = &[
-        ("home", "Home"),
-        ("display", "Display"),
-        ("sound", "Sound"),
-        ("network", "Network"),
-        ("appearance", "Appearance"),
-        ("about", "About"),
-    ];
-
-    for (_id, title) in tab_titles {
-        let row_label = Label::new(Some(title));
-        row_label.set_halign(Align::Start);
-        row_label.set_margin_top(8);
-        row_label.set_margin_bottom(8);
-        row_label.set_margin_start(12);
-        row_label.set_margin_end(12);
-
-        let row = ListBoxRow::new();
-        row.set_child(Some(&row_label));
-        tab_list.append(&row);
-    }
-
-    let nav = Popover::builder()
-        .child(&tab_list)
-        .has_arrow(false)
-        .build();
-
-    let menu_button = MenuButton::builder()
-        .label("Menu")
-        .halign(Align::Center)
-        .valign(Align::Start)
-        .popover(&nav)
-        .build();
-
-    tab_list.set_selection_mode(gtk4::SelectionMode::Single);
-
-    let dragmov = GestureClick::new();
-
-    dragmov.connect_pressed(|gesture, _n_press, x, y| {
-        if gesture.current_button() != gtk4::gdk::BUTTON_PRIMARY {
-            return;
-        }
-
-        if let Some(widget) = gesture.widget() {
-            if let Some(root) = widget.root() {
-                if let Some(native) = root.dynamic_cast_ref::<gtk4::Native>() {
-                    if let Some(toplevel) = native.surface().and_then(|s| s.dynamic_cast::<gtk4::gdk::Toplevel>().ok()) {
-                        if let Some(device) = gesture.device() {
-                            let button = gesture.current_button();
-
-                            toplevel.begin_move(
-                                &device,
-                                button as i32,
-                                x + widget.allocation().x() as f64,
-                                y + widget.allocation().y() as f64,
-                                gesture.current_event_time(),
-                            );
-                        }
-                    }
+            let mut idx = 0;
+            while let Some(row) = menu_list.row_at_index(idx) {
+                if row.widget_name() == id {
+                    menu_list.select_row(Some(&row));
+                    break;
                 }
+                idx += 1;
             }
+        })
+    };
+
+    let sync_for_signal = sync_for_change.clone();
+    stack.connect_notify_local(Some("visible-child-name"), move |stack, _| {
+        if let Some(name) = stack.visible_child_name() {
+            sync_for_signal(&name);
         }
     });
 
-    {
-        let stack = stack.clone();
-        let nav = nav.clone();
-        let tab_ids: Vec<&'static str> = tab_titles.iter().map(|(id, _)| *id).collect();
-        tab_list.connect_row_activated(move |_, row| {
-            let index = row.index();
-            if index >= 0 {
-                if let Some(id) = tab_ids.get(index as usize) {
-                    stack.set_visible_child_name(id);
-                }
-            }
-            nav.popdown();
-        });
-    }
+    let content_area = GtkBox::new(Orientation::Vertical, 0);
+    content_area.set_hexpand(true);
+    content_area.append(&stack);
+    content_area.append(&header);
 
-    let main_box = Overlay::new();
-
-    main_box.add_controller(dragmov);
-    
-    main_box.add_overlay(&menu_button);
-    main_box.set_child(Some(&stack));
-    // main_box.append(&sidebar_scroller);
-    
+    let main_box = GtkBox::new(Orientation::Horizontal, 0);
+    main_box.append(&content_area);
+    main_box.append(&right_panel);
 
     window.set_child(Some(&main_box));
 
     let target = initial_tab.unwrap_or_else(|| "home".to_string());
     stack.set_visible_child_name(&target);
+    sync_for_change(&target);
 
     window.present();
 }
