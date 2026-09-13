@@ -1,10 +1,11 @@
 use gtk4::prelude::*;
 use gtk4::{
-    Application, ApplicationWindow, Box as GtkBox, Button, Label, ListBox, ListBoxRow,
+    Application, ApplicationWindow, Box as GtkBox, Label, ListBox, ListBoxRow,
     Orientation, ScrolledWindow, SearchEntry, Stack, Separator, Switch, Scale, SpinButton,
     Adjustment, ComboBoxText, Frame, Grid, Align, CssProvider, DrawingArea, gdk_pixbuf::Pixbuf,
 };
 use std::fs;
+use std::process::Command;
 use std::rc::Rc;
 
 const APP_ID: &str = "ekah.scu.calibrate";
@@ -167,16 +168,9 @@ fn load_css() {
         .shortcut-card {
             all: unset;
             min-width: 150px;
-            padding: 10px 20px 10px 10px;
             border-radius: 30px;
-            border: 2px solid transparent;
-            background-image: linear-gradient(rgb(6, 6, 6), rgb(6, 6, 6)),
-                                linear-gradient(0deg, rgb(9, 9, 9), rgba(61, 61, 61, 0.686));
-            background-origin: border-box;
-            background-clip: padding-box, border-box;
-            box-shadow: rgba(0, 0, 0, 0.24) 0px 3px 8px;
-
-            transition: all 200ms cubic-bezier(0.4, 0, 0.2, 1);
+            border: 2px solid #ffffff0e;
+            background-color: #ffffff0f;
         }
         
         .usrcard {
@@ -191,17 +185,17 @@ fn load_css() {
             transition: all 200ms cubic-bezier(0.4, 0, 0.2, 1);
         }
 
-        .shortcut-card:active {
-            border: none;
+        .shortcut-card:hover {
+            background-color: #f2f3f913;
         }
 
-        .shortcut-card:hover {
-            background-color: #1d2030;
+        .detail-card {
+            padding: 20px;
         }
 
         .shortcut-title {
             font-weight: 600;
-            font-size: 14px;
+            font-size: 22px;
             color: #f2f2f5;
         }
 
@@ -224,24 +218,23 @@ fn load_css() {
         }
 
         scrollbar slider {
-            background-color: #3a3d52;
+            background-color: #3a3d5203;
             border-radius: 8px;
             min-width: 8px;
             min-height: 8px;
             border: 2px solid transparent;
-            background-clip: padding-box;
         }
 
         scrollbar slider:hover {
-            background-color: #4d5170;
+            background-color: #4d517000;
         }
 
         scrollbar slider:active {
-            background-color: #6c70a0;
+            background-color: #6c70a000;
         }
 
         scrollbar trough {
-            background-color: #14161f;
+            background-color: #14161f00;
             border-radius: 8px;
         }
 
@@ -250,6 +243,37 @@ fn load_css() {
             font-weight: 500;
             color: black;
         }
+
+        .flat {
+            all: unset;
+        }
+
+        .card-icons {
+            padding: 5px;
+            background-color: #ffffff62;
+            border-radius: 20px;
+            box-shadow: rgba(50, 50, 93, 0.25) 0px 6px 12px -2px, rgba(0, 0, 0, 0.3) 0px 3px 7px -3px;
+        }
+
+        .moduleCos {
+            padding: 20px;
+            min-width: 300px;
+            background-color: #0000005b;
+            border: 1px solid #ffffff39;
+            border-radius: 20px;
+        }
+
+        .moduleTitle {
+            font-size: 18px;
+            font-weight: 400;
+        }
+
+        .moduleSub {
+            font-size: 12px;
+            font-weight: 300;
+            color: #ffffff8d;
+        }
+
         "#,
     );
     gtk4::style_context_add_provider_for_display(
@@ -262,7 +286,8 @@ fn load_css() {
 fn page_scroller(content: &GtkBox) -> ScrolledWindow {
     content.add_css_class("settings-page");
     ScrolledWindow::builder()
-        .vscrollbar_policy(gtk4::PolicyType::Never)
+        .vscrollbar_policy(gtk4::PolicyType::Always)
+        .hscrollbar_policy(gtk4::PolicyType::Never)
         .vexpand(true)
         .hexpand(true)
         .child(content)
@@ -344,21 +369,433 @@ fn labeled_row(label_text: &str, caption: &str, widget: &impl IsA<gtk4::Widget>)
     row
 }
 
-
-struct Shortcut {
-    id: &'static str,
-    title: &'static str,
-    desc: &'static str,
+fn format_bytes(bytes: u64) -> String {
+    const UNITS: [&str; 5] = ["B", "KB", "MB", "GB", "TB"];
+    let mut size = bytes as f64;
+    let mut unit_idx = 0;
+    while size >= 1024.0 && unit_idx < UNITS.len() - 1 {
+        size /= 1024.0;
+        unit_idx += 1;
+    }
+    return format!("{:.1} {}", size, UNITS[unit_idx])
 }
 
-const SHORTCUTS: &[Shortcut] = &[
-    Shortcut { id: "display", title: "Display", desc: "Resolution, brightness, night light" },
-    Shortcut { id: "sound", title: "Sound", desc: "Volume, output device, alerts" },
-    Shortcut { id: "network", title: "Network", desc: "Wi-Fi, VPN, proxy settings" },
-    Shortcut { id: "appearance", title: "Appearance", desc: "Theme, accent color, fonts" },
-    Shortcut { id: "privacy", title: "Privacy", desc: "Permissions, location, diagnostics" },
-    Shortcut { id: "about", title: "About", desc: "System info and version" },
-];
+fn rounded_rect(cr: &gtk4::cairo::Context, x: f64, y: f64, w: f64, h: f64, r: f64) {
+    let r = r.min(w / 2.0).min(h / 2.0).max(0.0);
+    cr.new_sub_path();
+    cr.arc(x + w - r, y + r, r, -std::f64::consts::FRAC_PI_2, 0.0);
+    cr.arc(x + w - r, y + h - r, r, 0.0, std::f64::consts::FRAC_PI_2);
+    cr.arc(x + r, y + h - r, r, std::f64::consts::FRAC_PI_2, std::f64::consts::PI);
+    cr.arc(x + r, y + r, r, std::f64::consts::PI, std::f64::consts::PI * 1.5);
+    cr.close_path();
+}
+
+fn build_percentage_bar(fraction: f64, min_width: i32, height: i32) -> DrawingArea {
+    let area = DrawingArea::new();
+    area.set_content_width(min_width);
+    area.set_content_height(height);
+    area.set_hexpand(true);
+    area.set_valign(Align::Center);
+
+    let fraction = fraction.clamp(0.0, 1.0);
+
+    area.set_draw_func(move |_, cr, w, h| {
+        let w = w as f64;
+        let h = h as f64;
+        let radius = h / 2.0;
+
+        rounded_rect(cr, 0.0, 0.0, w, h, radius);
+        cr.set_source_rgba(1.0, 1.0, 1.0, 0.08);
+        let _ = cr.fill();
+
+        if fraction <= 0.0 {
+            return;
+        }
+
+        let fill_w = (w * fraction).max(h.min(w));
+
+        let (r, g, b) = if fraction < 0.6 {
+            (0.30, 0.78, 0.47)
+        } else if fraction < 0.85 {
+            (0.95, 0.70, 0.25)
+        } else {
+            (0.90, 0.30, 0.30)
+        };
+
+        rounded_rect(cr, 0.0, 0.0, fill_w, h, radius);
+        cr.set_source_rgb(r, g, b);
+        let _ = cr.fill();
+    });
+
+    area
+}
+
+struct PartitionInfo {
+    mount: String,
+    used: u64,
+    total: u64,
+}
+
+fn read_partitions() -> Vec<PartitionInfo> {
+    const EXCLUDED_FS: &[&str] = &[
+        "tmpfs", "devtmpfs", "squashfs", "overlay", "proc", "sysfs",
+        "cgroup", "cgroup2", "debugfs", "tracefs", "mqueue", "hugetlbfs",
+        "devpts", "securityfs", "pstore", "bpf", "autofs", "binfmt_misc",
+        "configfs", "efivarfs", "rpc_pipefs", "fuse.gvfsd-fuse", "fusectl",
+    ];
+
+    let mut partitions = Vec::new();
+
+    if let Ok(output) = Command::new("df").args(["-T", "-B1"]).output() {
+        if let Ok(text) = String::from_utf8(output.stdout) {
+            for line in text.lines().skip(1) {
+                let fields: Vec<&str> = line.split_whitespace().collect();
+                if fields.len() < 7 {
+                    continue;
+                }
+
+                let fs_type = fields[1];
+                if EXCLUDED_FS.contains(&fs_type) {
+                    continue;
+                }
+
+                let total: u64 = fields[2].parse().unwrap_or(0);
+                let used: u64 = fields[3].parse().unwrap_or(0);
+                if total == 0 {
+                    continue;
+                }
+
+                let mount = fields[6..].join(" ");
+
+                partitions.push(PartitionInfo { mount, used, total });
+            }
+        }
+    }
+
+    partitions
+}
+
+fn read_module_versions() -> Vec<(String, String)> {
+    let path = "/var/lib/cynager/info.probe";
+    let mut versions = Vec::new();
+
+    if let Ok(contents) = fs::read_to_string(path) {
+        let mut in_ver_block = false;
+        for line in contents.lines() {
+            let trimmed = line.trim();
+            if trimmed == ":ver" {
+                in_ver_block = true;
+                continue;
+            }
+            if trimmed == ":end" {
+                if in_ver_block {
+                    break;
+                }
+                continue;
+            }
+            if in_ver_block && !trimmed.is_empty() {
+                if let Some((name, ver)) = trimmed.split_once(':') {
+                    versions.push((name.trim().to_string(), ver.trim().to_string()));
+                }
+            }
+        }
+    }
+
+    versions
+}
+
+fn read_os_pretty_name() -> String {
+    if let Ok(contents) = fs::read_to_string("/etc/os-release") {
+        for line in contents.lines() {
+            if let Some(rest) = line.strip_prefix("PRETTY_NAME=") {
+                return rest.trim_matches('"').to_string();
+            }
+        }
+    }
+    "Unknown OS".to_string()
+}
+
+fn read_hostname() -> String {
+    fs::read_to_string("/proc/sys/kernel/hostname")
+        .map(|s| s.trim().to_string())
+        .unwrap_or_else(|_| "unknown".to_string())
+}
+
+fn read_kernel_version() -> String {
+    Command::new("uname")
+        .arg("-r")
+        .output()
+        .ok()
+        .and_then(|o| String::from_utf8(o.stdout).ok())
+        .map(|s| s.trim().to_string())
+        .unwrap_or_else(|| "unknown".to_string())
+}
+
+fn read_uptime() -> String {
+    if let Ok(contents) = fs::read_to_string("/proc/uptime") {
+        if let Some(secs_str) = contents.split_whitespace().next() {
+            if let Ok(secs) = secs_str.parse::<f64>() {
+                let total_secs = secs as u64;
+                let hours = total_secs / 3600;
+                let minutes = (total_secs % 3600) / 60;
+                return format!("{}h {}m", hours, minutes);
+            }
+        }
+    }
+    "unknown".to_string()
+}
+
+fn read_cpu_model() -> String {
+    if let Ok(contents) = fs::read_to_string("/proc/cpuinfo") {
+        for line in contents.lines() {
+            if line.starts_with("model name") {
+                if let Some((_, val)) = line.split_once(':') {
+                    return val.trim().to_string();
+                }
+            }
+        }
+    }
+    "Unknown CPU".to_string()
+}
+
+fn read_memory_info() -> String {
+    if let Ok(contents) = fs::read_to_string("/proc/meminfo") {
+        let mut total_kb: u64 = 0;
+        let mut available_kb: u64 = 0;
+        for line in contents.lines() {
+            if line.starts_with("MemTotal:") {
+                total_kb = line.split_whitespace().nth(1).and_then(|v| v.parse().ok()).unwrap_or(0);
+            } else if line.starts_with("MemAvailable:") {
+                available_kb = line.split_whitespace().nth(1).and_then(|v| v.parse().ok()).unwrap_or(0);
+            }
+        }
+        if total_kb > 0 {
+            let used_kb = total_kb.saturating_sub(available_kb);
+            return format!("{} / {}", format_bytes(used_kb * 1024), format_bytes(total_kb * 1024));
+        }
+    }
+    "unknown".to_string()
+}
+
+fn read_shell() -> String {
+    std::env::var("SHELL").unwrap_or_else(|_| "unknown".to_string())
+}
+
+fn build_storage_card() -> GtkBox {
+    let card = GtkBox::new(Orientation::Vertical, 10);
+    card.add_css_class("shortcut-card");
+    card.add_css_class("detail-card");
+    card.set_hexpand(true);
+
+
+    let storageicon = gtk4::Image::from_file("/var/lib/cynager/icons/disk.svg");
+    storageicon.set_pixel_size(54);
+    storageicon.set_halign(Align::Start);
+    storageicon.set_css_classes(&["card-icons"]);
+
+    let title = Label::new(Some("Storage & Partitions"));
+    title.add_css_class("shortcut-title");
+    title.set_halign(Align::Start);
+    title.set_margin_bottom(20);
+    card.append(&storageicon);
+    card.append(&title);
+
+    let partitions = read_partitions();
+
+    if partitions.is_empty() {
+        let empty = Label::new(Some("No partition data available"));
+        empty.add_css_class("shortcut-desc");
+        empty.set_halign(Align::Start);
+        card.append(&empty);
+    } else {
+        for p in partitions {
+            let fraction = if p.total > 0 { p.used as f64 / p.total as f64 } else { 0.0 };
+
+            let row = GtkBox::new(Orientation::Vertical, 4);
+            row.set_margin_top(4);
+
+            let top_row = GtkBox::new(Orientation::Horizontal, 8);
+
+            let mount_lbl = Label::new(Some(&p.mount));
+            mount_lbl.add_css_class("row-label");
+            mount_lbl.set_halign(Align::Start);
+            mount_lbl.set_hexpand(true);
+            mount_lbl.set_ellipsize(gtk4::pango::EllipsizeMode::Middle);
+
+            let stats_lbl = Label::new(Some(&format!(
+                "{} / {}  ({:.0}%)",
+                format_bytes(p.used),
+                format_bytes(p.total),
+                fraction * 100.0
+            )));
+            stats_lbl.add_css_class("row-caption");
+            stats_lbl.set_halign(Align::End);
+
+            top_row.append(&mount_lbl);
+            top_row.append(&stats_lbl);
+
+            let bar = build_percentage_bar(fraction, 100, 10);
+
+            row.append(&top_row);
+            row.append(&bar);
+            card.append(&row);
+        }
+    }
+
+    card
+}
+
+fn build_versions_card() -> GtkBox {
+    let card = GtkBox::new(Orientation::Vertical, 10);
+    card.add_css_class("shortcut-card");
+    card.set_hexpand(true);
+
+    let vericon = gtk4::Image::from_file("/var/lib/cynager/icons/ver.svg");
+    vericon.set_pixel_size(54);
+    vericon.set_margin_top(20);
+    vericon.set_margin_start(20);
+    vericon.set_halign(Align::Start);
+    vericon.set_css_classes(&["card-icons"]);
+    card.append(&vericon);
+
+    let title = Label::new(Some("Modules"));
+    title.add_css_class("shortcut-title");
+    title.set_margin_start(20);
+    title.set_halign(Align::Start);
+    title.set_margin_bottom(20);
+    card.append(&title);
+
+    let versions = read_module_versions();
+
+    if versions.is_empty() {
+        let empty = Label::new(Some("No version data found at info.probe"));
+        empty.add_css_class("shortcut-desc");
+        empty.set_halign(Align::Start);
+        empty.set_wrap(true);
+        card.append(&empty);
+    } else {
+        let cards_box = GtkBox::builder()
+            .orientation(Orientation::Horizontal)
+            .spacing(20)
+            .margin_start(20)
+            .margin_end(20)
+            .css_classes(["moduleCosBox"])
+            .build();
+
+        let box_scr = ScrolledWindow::builder()
+            .vscrollbar_policy(gtk4::PolicyType::Never)
+            .hscrollbar_policy(gtk4::PolicyType::Always)
+            .vexpand(true)
+            .hexpand(true)
+            .child(&cards_box)
+            .margin_bottom(20)
+            .build();
+
+        for (module, version) in versions {
+            if module != "cynageOS" {
+                let name_lbl = Label::new(Some(&module));
+                name_lbl.add_css_class("row-label");
+                name_lbl.set_halign(Align::Start);
+                name_lbl.set_hexpand(true);
+
+                let ver_lbl = Label::new(Some(&version));
+                ver_lbl.add_css_class("row-caption");
+                ver_lbl.set_halign(Align::End);
+
+                let cardsmodu = GtkBox::builder()
+                    .orientation(Orientation::Horizontal)
+                    .spacing(10)
+                    .css_classes(["moduleCos"])
+                    .build();
+
+                let icon = gtk4::Image::from_file(format!("/var/lib/cynager/icons/{}.png", module));
+                icon.set_pixel_size(100);
+                icon.set_halign(Align::Start);
+
+                let sidebox = GtkBox::new(Orientation::Vertical, 5);
+                sidebox.set_valign(Align::Center);
+                sidebox.append(
+                    &Label::builder()
+                        .label(&module)
+                        .css_classes(["moduleTitle"])
+                        .halign(Align::Start)
+                        .build()
+                );
+                sidebox.append(
+                    &Label::builder()
+                        .label(&version)
+                        .halign(Align::Start)
+                        .css_classes(["moduleSub"])
+                        .build()
+                );
+
+                cardsmodu.append(&icon);
+                cardsmodu.append(&sidebox);
+
+                cards_box.append(&cardsmodu);
+            }
+        }
+
+        card.append(&box_scr);
+    }
+
+    card
+}
+
+fn build_device_card(username: &str) -> GtkBox {
+    let card = GtkBox::new(Orientation::Vertical, 10);
+    card.add_css_class("shortcut-card");
+    card.add_css_class("detail-card");
+    card.set_hexpand(true);
+
+    let devicon = gtk4::Image::from_file("/var/lib/cynager/icons/device.svg");
+    devicon.set_pixel_size(54);
+    devicon.set_halign(Align::Start);
+    devicon.set_css_classes(&["card-icons"]);
+    card.append(&devicon);
+
+    let title = Label::new(Some("Device"));
+    title.add_css_class("shortcut-title");
+    title.set_halign(Align::Start);
+    title.set_margin_bottom(20);
+    card.append(&title);
+
+    let rows: [(&str, String); 8] = [
+        ("User", username.to_string()),
+        ("Hostname", read_hostname()),
+        ("OS", read_os_pretty_name()),
+        ("Kernel", read_kernel_version()),
+        ("Uptime", read_uptime()),
+        ("CPU", read_cpu_model()),
+        ("Memory", read_memory_info()),
+        ("Shell", read_shell()),
+    ];
+
+    let grid = Grid::builder()
+        .row_spacing(8)
+        .column_spacing(24)
+        .build();
+
+    for (i, (label_text, value)) in rows.iter().enumerate() {
+        let key_lbl = Label::new(Some(label_text));
+        key_lbl.add_css_class("row-caption");
+        key_lbl.set_halign(Align::Start);
+        key_lbl.set_valign(Align::Start);
+
+        let val_lbl = Label::new(Some(value));
+        val_lbl.add_css_class("row-label");
+        val_lbl.set_halign(Align::Start);
+        val_lbl.set_hexpand(true);
+        val_lbl.set_wrap(true);
+        val_lbl.set_xalign(0.0);
+
+        grid.attach(&key_lbl, 0, i as i32, 1, 1);
+        grid.attach(&val_lbl, 1, i as i32, 1, 1);
+    }
+
+    card.append(&grid);
+    card
+}
 
 fn build_round_user_icon(pixbuf: Pixbuf, size: i32) -> DrawingArea {
     let icon = DrawingArea::new();
@@ -410,9 +847,8 @@ fn build_round_user_icon(pixbuf: Pixbuf, size: i32) -> DrawingArea {
     icon
 }
 
-fn build_home_page(stack: &Stack) -> ScrolledWindow {
+fn build_home_page() -> ScrolledWindow {
     let content = GtkBox::new(Orientation::Vertical, 20);
-
 
     let final_path = String::from("/usr/share/octobacillus/usericon.png"); 
     let pixbuf = Pixbuf::from_file(&final_path).unwrap();
@@ -451,48 +887,13 @@ fn build_home_page(stack: &Stack) -> ScrolledWindow {
             .build()
     );
     
-    let grid = Grid::builder()
-        .row_spacing(14)
-        .column_spacing(14)
-        // .vexpand(true)
-        // .valign(Align::End)
-        .column_homogeneous(true)
-        .build();
-
-    for (i, sc) in SHORTCUTS.iter().enumerate() {
-        let card = GtkBox::new(Orientation::Vertical, 6);
-        card.add_css_class("shortcut-card");
-        card.set_size_request(-1, 96);
-
-        let title = Label::new(Some(sc.title));
-        title.add_css_class("shortcut-title");
-        title.set_halign(Align::Start);
-
-        let desc = Label::new(Some(sc.desc));
-        desc.add_css_class("shortcut-desc");
-        desc.set_halign(Align::Start);
-        desc.set_wrap(true);
-
-        card.append(&title);
-        card.append(&desc);
-
-        let button = Button::new();
-        button.set_child(Some(&card));
-        button.add_css_class("flat");
-
-        let stack_clone = stack.clone();
-        let target_id = sc.id;
-        button.connect_clicked(move |_| {
-            stack_clone.set_visible_child_name(target_id);
-        });
-
-        let col = (i % 3) as i32;
-        let row = (i / 3) as i32;
-        grid.attach(&button, col, row, 1, 1);
-    }
+    let cards_box = GtkBox::new(Orientation::Vertical, 15);
+    cards_box.append(&build_storage_card());
+    cards_box.append(&build_versions_card());
+    cards_box.append(&build_device_card(&name));
 
     content.append(&usrbox);
-    content.append(&grid);
+    content.append(&cards_box);
 
     // let bg = gtk4::Image::from_file("/var/lib/cynager/icons/cog_bg.svg");
     // bg.set_pixel_size(500);
@@ -767,14 +1168,14 @@ fn build_ui(app: &Application, initial_tab: Option<String>) {
         .title("Calibrate")
         .default_width(1500)
         .default_height(900)
+        .resizable(true)
         .build();
 
     let stack = Stack::new();
     stack.set_transition_type(gtk4::StackTransitionType::SlideLeftRight);
     stack.set_transition_duration(300);
-    stack.set_margin_top(20);
 
-    let home_page = build_home_page(&stack);
+    let home_page = build_home_page();
     stack.add_titled(&home_page, Some("home"), "Home");
 
     let display_page = build_display_page();
