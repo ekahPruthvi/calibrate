@@ -209,8 +209,9 @@ fn load_css() {
         }
 
         .row-caption {
-            color: #7a7a89;
+            color: #ffffffbd;
             font-size: 11px;
+            font-weight: 900;
         }
 
         scrollbar {
@@ -1133,7 +1134,7 @@ fn build_right_panel(stack: &Stack) -> (GtkBox, ListBox) {
 
     let search = SearchEntry::new();
     search.add_css_class("menu-search");
-    search.set_placeholder_text(Some("Search settings"));
+    search.set_placeholder_text(Some("Search in settings"));
 
     let list = ListBox::new();
     list.set_selection_mode(gtk4::SelectionMode::Single);
@@ -1194,13 +1195,13 @@ fn build_ui(app: &Application, initial_tab: Option<String>) {
     let window = ApplicationWindow::builder()
         .application(app)
         .title("Calibrate")
-        .default_width(1500)
+        .default_width(1000)
         .default_height(900)
         .resizable(true)
         .build();
 
     let stack = Stack::new();
-    stack.set_transition_type(gtk4::StackTransitionType::SlideLeftRight);
+    stack.set_transition_type(gtk4::StackTransitionType::SlideUpDown);
     stack.set_transition_duration(300);
 
     let home_page = build_home_page();

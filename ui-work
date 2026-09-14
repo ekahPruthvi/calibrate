@@ -1,0 +1,77 @@
+monitor tabs have icons resembling monitors
+home page storage and device link to pages and modules to abt cynageos
+each page shud have a icon on top and small info abt tht page
+
+-Appearence
+    Wallpaper section:
+        header with add new wallpaper or delete selected wallpaper (see notes 11 point) and if two monitors tabs per monitor
+        carasol of wallpapers from capsule config walls 
+        name of selected, location, size
+    Theme:
+        ghost app display (gnome) | disclamer for official support for only gnome for qt apps use kvauntum manager or somthing similar
+        ghost app display (gnome) | toggle selection for dark/light
+    cursor section:
+        cursor display | theme selection drop down
+        cursor display | size 
+    Font selection: 
+        tabs for font, document font and monospace
+        ui selection from text-editor saved in pinterest
+    (for theme, cursor, font run gsettings and re write in /var/lib/cynager/niri/startup.kdl)
+
+-Shell settings
+    Shell main output:
+        current display
+        display name entry 
+    Widgets:
+        grid of widgets and toggle to enable and disable
+        for sticker add a cog to change the sticker
+    Sound:
+        notification sound
+        startup sound
+    
+-Display
+    wallpaper showcase and cog to Appearence section
+    displays tab
+    set scale, resolution, and refresh rate
+    and rotation setting
+
+-Sound settings
+    copy from ctrl capsules
+
+-Network
+    copy from gnome settings
+
+-bluetooth
+    copy from gnome settings
+
+-Storage
+    detailed storage 
+    trash cleanup
+    all tmp files cleanup
+    pacman, flatpak cleanup
+    auto cleanup
+
+-Battery
+    detailed battery usage, cycles, health, batt_low off reset
+
+-Shortcuts
+    keyboard shortcuts read from config kdl
+    mouse 
+    touchpad
+
+-Help (ai) in alt.
+    settings for model and other shi
+    in the future
+
+-apps
+    drag and drop installer for appimages and plain binares(for tis ask abt deets, icon, desc, etc)
+    all installed apps detailes and uninstaller
+    csd enable and disable for each app
+    dependencies searching
+
+-user
+    username icon (chnage icon/set icon)
+    password set reset etc
+
+-abt cynageos
+    details and wat modules do wat man page for each modules and capsule shell css coordinations
