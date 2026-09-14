@@ -11,7 +11,8 @@ use std::rc::Rc;
 const APP_ID: &str = "ekah.scu.calibrate";
 
 const TAB_IDS: &[&str] = &[
-    "home", "display", "sound", "network", "appearance", "about",
+    "home", "appearance", "shellset", "display", "sound", "net", "blue", 
+    "Storage", "bat", "shortcuts", "pills", "apps", "user", "abt",
 ];
 
 struct MenuItem {
@@ -21,11 +22,19 @@ struct MenuItem {
 
 const MENU_ITEMS: &[MenuItem] = &[
     MenuItem { id: "home", title: "Home" },
+    MenuItem { id: "appearance", title: "Appearance" },
+    MenuItem { id: "shellset", title: "Shell" },
     MenuItem { id: "display", title: "Display" },
     MenuItem { id: "sound", title: "Sound" },
-    MenuItem { id: "network", title: "Network" },
-    MenuItem { id: "appearance", title: "Appearance" },
-    MenuItem { id: "about", title: "About" },
+    MenuItem { id: "net", title: "Network" },
+    MenuItem { id: "blue", title: "Bluetooth" },
+    MenuItem { id: "Storage", title: "Storage" },
+    MenuItem { id: "bat", title: "Battery" },
+    MenuItem { id: "shortcuts", title: "Shortcuts" },
+    MenuItem { id: "pills", title: "Pills" },
+    MenuItem { id: "apps", title: "Applications" },
+    MenuItem { id: "user", title: "User" },
+    MenuItem { id: "abt", title: "About" },
 ];
 
 fn read_username() -> String {
@@ -79,20 +88,16 @@ fn load_css() {
     css.load_from_data(
         r#"
         window {
-            background-color: #212020;
+            background-color: #202120;
         }
 
         .right-panel {
             all: unset;
-            min-width: 150px;
+            min-width: 120px;
             padding: 10px 20px 10px 10px;
-            border-radius: 15px;
-            border: 2px solid transparent;
-            background-image: linear-gradient(rgb(27, 27, 27), rgb(27, 27, 27)),
-                                linear-gradient(0deg, rgba(251, 251, 251, 0.06), rgba(251, 251, 251, 0.06));
-            background-origin: border-box;
-            background-clip: padding-box, border-box;
-            box-shadow: rgba(7, 7, 7, 0.26) 0px 3px 8px;    
+            border-radius: 0px;
+            background-color: rgba(251, 248, 248, 0.12);
+            box-shadow: inset 8px 0px 8px -4px rgba(0, 0, 0, 0.1);
 
             transition: all 200ms cubic-bezier(0.4, 0, 0.2, 1);
         }
@@ -125,7 +130,7 @@ fn load_css() {
         }
 
         .menu-list row:selected {
-            background-color: #f9f9f931;
+            background-color: #ffffff22;
             color: #ffffff;
         }
 
@@ -295,6 +300,36 @@ fn page_scroller(content: &GtkBox) -> ScrolledWindow {
         .build()
 }
 
+fn build_placeholder_page(title: &str, message: &str) -> ScrolledWindow {
+    let content = GtkBox::new(Orientation::Vertical, 16);
+
+    let frame = Frame::new(None);
+    let inner = GtkBox::new(Orientation::Vertical, 8);
+    inner.set_margin_top(40);
+    inner.set_margin_bottom(40);
+    inner.set_margin_start(20);
+    inner.set_margin_end(20);
+    inner.set_halign(Align::Center);
+    inner.set_valign(Align::Center);
+
+    let title_lbl = Label::new(Some(title));
+    title_lbl.add_css_class("shortcut-title");
+    title_lbl.set_halign(Align::Center);
+
+    let msg_lbl = Label::new(Some(message));
+    msg_lbl.add_css_class("shortcut-desc");
+    msg_lbl.set_halign(Align::Center);
+    msg_lbl.set_justify(gtk4::Justification::Center);
+    msg_lbl.set_wrap(true);
+
+    inner.append(&title_lbl);
+    inner.append(&msg_lbl);
+
+    frame.set_child(Some(&inner));
+    content.append(&frame);
+    page_scroller(&content)
+}
+
 fn build_page_header() -> (GtkBox, Label, Label) {
     let header = GtkBox::new(Orientation::Horizontal, 4);
     header.add_css_class("page-header-bar");
@@ -321,6 +356,14 @@ fn page_meta(id: &str, username: &str) -> (String, String) {
             format!("Porfile: [{}] - Calibrate by SCU", username),
             "Jump straight into a settings category below.".to_string(),
         ),
+        "appearance" => (
+            "Appearance".to_string(),
+            "Personalize the look and feel of your desktop.".to_string(),
+        ),
+        "shellset" => (
+            "Shell".to_string(),
+            "Configure shell behavior and startup options.".to_string(),
+        ),
         "display" => (
             "Display".to_string(),
             "Configure how your screen looks and behaves.".to_string(),
@@ -329,15 +372,39 @@ fn page_meta(id: &str, username: &str) -> (String, String) {
             "Sound".to_string(),
             "Control audio input, output, and alerts.".to_string(),
         ),
-        "network" => (
+        "net" => (
             "Network".to_string(),
             "Manage Wi-Fi, VPN, and connection settings.".to_string(),
         ),
-        "appearance" => (
-            "Appearance".to_string(),
-            "Personalize the look and feel of your desktop.".to_string(),
+        "blue" => (
+            "Bluetooth".to_string(),
+            "Manage paired devices and Bluetooth visibility.".to_string(),
         ),
-        "about" => (
+        "Storage" => (
+            "Storage".to_string(),
+            "Review disk usage across mounted partitions.".to_string(),
+        ),
+        "bat" => (
+            "Battery".to_string(),
+            "Power usage and battery health settings.".to_string(),
+        ),
+        "shortcuts" => (
+            "Shortcuts".to_string(),
+            "Customize keyboard shortcuts and hotkeys.".to_string(),
+        ),
+        "pills" => (
+            "Pills".to_string(),
+            "Placeholder section — not yet defined.".to_string(),
+        ),
+        "apps" => (
+            "Applications".to_string(),
+            "Manage installed applications and defaults.".to_string(),
+        ),
+        "user" => (
+            "User".to_string(),
+            "Account details and user preferences.".to_string(),
+        ),
+        "abt" => (
             "About".to_string(),
             "System and version information.".to_string(),
         ),
@@ -1126,10 +1193,10 @@ fn build_right_panel(stack: &Stack) -> (GtkBox, ListBox) {
     let panel = GtkBox::new(Orientation::Vertical, 0);
     panel.add_css_class("right-panel");
     panel.set_size_request(220, -1);
-    panel.set_margin_top(10);
-    panel.set_margin_bottom(10);
+    // panel.set_margin_top(10);
+    // panel.set_margin_bottom(10);
     panel.set_margin_start(10);
-    panel.set_margin_end(10);
+    // panel.set_margin_end(10);
     panel.set_hexpand(false);
 
     let search = SearchEntry::new();
@@ -1195,8 +1262,8 @@ fn build_ui(app: &Application, initial_tab: Option<String>) {
     let window = ApplicationWindow::builder()
         .application(app)
         .title("Calibrate")
-        .default_width(1000)
-        .default_height(900)
+        .default_width(1100)
+        .default_height(600)
         .resizable(true)
         .build();
 
@@ -1207,6 +1274,12 @@ fn build_ui(app: &Application, initial_tab: Option<String>) {
     let home_page = build_home_page();
     stack.add_titled(&home_page, Some("home"), "Home");
 
+    let appearance_page = build_appearance_page();
+    stack.add_titled(&appearance_page, Some("appearance"), "Appearance");
+
+    let shellset_page = build_placeholder_page("Shell", "Shell settings are coming soon.");
+    stack.add_titled(&shellset_page, Some("shellset"), "Shell");
+
     let display_page = build_display_page();
     stack.add_titled(&display_page, Some("display"), "Display");
 
@@ -1214,13 +1287,31 @@ fn build_ui(app: &Application, initial_tab: Option<String>) {
     stack.add_titled(&sound_page, Some("sound"), "Sound");
 
     let network_page = build_network_page();
-    stack.add_titled(&network_page, Some("network"), "Network");
+    stack.add_titled(&network_page, Some("net"), "Network");
 
-    let appearance_page = build_appearance_page();
-    stack.add_titled(&appearance_page, Some("appearance"), "Appearance");
+    let blue_page = build_placeholder_page("Bluetooth", "Bluetooth settings are coming soon.");
+    stack.add_titled(&blue_page, Some("blue"), "Bluetooth");
+
+    let storage_page = build_placeholder_page("Storage", "Detailed storage settings are coming soon.");
+    stack.add_titled(&storage_page, Some("Storage"), "Storage");
+
+    let battery_page = build_placeholder_page("Battery", "Battery settings are coming soon.");
+    stack.add_titled(&battery_page, Some("bat"), "Battery");
+
+    let shortcuts_page = build_placeholder_page("Shortcuts", "Keyboard shortcut settings are coming soon.");
+    stack.add_titled(&shortcuts_page, Some("shortcuts"), "Shortcuts");
+
+    let pills_page = build_placeholder_page("Pills", "This section is not yet defined.");
+    stack.add_titled(&pills_page, Some("pills"), "Pills");
+
+    let apps_page = build_placeholder_page("Applications", "Application settings are coming soon.");
+    stack.add_titled(&apps_page, Some("apps"), "Applications");
+
+    let user_page = build_placeholder_page("User", "User account settings are coming soon.");
+    stack.add_titled(&user_page, Some("user"), "User");
 
     let about_page = build_about_page(&username);
-    stack.add_titled(&about_page, Some("about"), "About");
+    stack.add_titled(&about_page, Some("abt"), "About");
 
     let (header, title_lbl, subtitle_lbl) = build_page_header();
 
