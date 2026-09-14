@@ -5,7 +5,7 @@ use gtk4::{
     Adjustment, ComboBoxText, Frame, Grid, Align, CssProvider, DrawingArea, gdk_pixbuf::Pixbuf,
 };
 use std::fs;
-use std::process::Command;
+use std::process::{Command, exit};
 use std::rc::Rc;
 
 const APP_ID: &str = "ekah.scu.calibrate";
@@ -531,20 +531,6 @@ fn read_kernel_version() -> String {
         .unwrap_or_else(|| "unknown".to_string())
 }
 
-fn read_uptime() -> String {
-    if let Ok(contents) = fs::read_to_string("/proc/uptime") {
-        if let Some(secs_str) = contents.split_whitespace().next() {
-            if let Ok(secs) = secs_str.parse::<f64>() {
-                let total_secs = secs as u64;
-                let hours = total_secs / 3600;
-                let minutes = (total_secs % 3600) / 60;
-                return format!("{}h {}m", hours, minutes);
-            }
-        }
-    }
-    "unknown".to_string()
-}
-
 fn read_cpu_model() -> String {
     if let Ok(contents) = fs::read_to_string("/proc/cpuinfo") {
         for line in contents.lines() {
@@ -561,20 +547,62 @@ fn read_cpu_model() -> String {
 fn read_memory_info() -> String {
     if let Ok(contents) = fs::read_to_string("/proc/meminfo") {
         let mut total_kb: u64 = 0;
-        let mut available_kb: u64 = 0;
         for line in contents.lines() {
             if line.starts_with("MemTotal:") {
                 total_kb = line.split_whitespace().nth(1).and_then(|v| v.parse().ok()).unwrap_or(0);
-            } else if line.starts_with("MemAvailable:") {
-                available_kb = line.split_whitespace().nth(1).and_then(|v| v.parse().ok()).unwrap_or(0);
             }
         }
         if total_kb > 0 {
-            let used_kb = total_kb.saturating_sub(available_kb);
-            return format!("{} / {}", format_bytes(used_kb * 1024), format_bytes(total_kb * 1024));
+            return format!("{}", format_bytes(total_kb * 1024));
         }
     }
     "unknown".to_string()
+}
+
+fn read_gpu_info() -> String {
+    let output = Command::new("lspci")
+        .arg("-vnn")
+        .output();
+
+    match output {
+        Ok(out) => {
+            let stdout_str = String::from_utf8_lossy(&out.stdout);
+            
+            let mut gpu_found = false;
+            let mut gpu_deet = "";
+            for line in stdout_str.lines() {
+                if line.to_lowercase().contains("vga compatible controller") {
+                    if let (Some(start), Some(end)) = (line.find('['), line.find(']')) {
+                        if start < end {
+                            let mut model = line[start + 1..end].trim();
+                            
+                            if model.contains('/') && !model.contains("Radeon") {
+                                let remaining_line = &line[end + 1..];
+                                if let (Some(s2), Some(e2)) = (remaining_line.find('['), remaining_line.find(']')) {
+                                    model = remaining_line[s2 + 1..e2].trim();
+                                }
+                            }
+
+                            gpu_deet = model;
+                            gpu_found = true;
+                            break; 
+                        }
+                    }
+                }
+            }
+
+            if !gpu_found {
+                return format!("No VGA compatible GPU detected in lspci output.");
+            } else {
+                return gpu_deet.to_string();
+            }
+        }
+        Err(e) => {
+            eprintln!("[calibrate] Failed to execute lspci command: {}", e);
+            return format!("ERROR");
+        }
+    }
+
 }
 
 fn read_shell() -> String {
@@ -765,8 +793,8 @@ fn build_device_card(username: &str) -> GtkBox {
         ("Hostname", read_hostname()),
         ("OS", read_os_pretty_name()),
         ("Kernel", read_kernel_version()),
-        ("Uptime", read_uptime()),
         ("CPU", read_cpu_model()),
+        ("GPU", read_gpu_info()),
         ("Memory", read_memory_info()),
         ("Shell", read_shell()),
     ];
@@ -1244,6 +1272,13 @@ fn build_ui(app: &Application, initial_tab: Option<String>) {
 }
 
 fn main() -> gtk4::glib::ExitCode {
+    let args: Vec<String> = std::env::args().collect();
+    
+    if args.len() > 1 && (args[1] == "--version" || args[1] == "-V") {
+        println!("{} {}", env!("CARGO_PKG_NAME"), env!("CARGO_PKG_VERSION"));
+        exit(1);
+    }
+
     let initial_tab = parse_tab_arg();
 
     let app = Application::builder()
