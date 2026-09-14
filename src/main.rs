@@ -103,16 +103,24 @@ fn load_css() {
         }
 
         .menu-search {
+            all: unset;
+            padding: 10px;
             margin: 12px 12px 6px 12px;
             background-color: #1c1e2900;
             border: 1px solid #f8f8f935;
-            border-radius: 50px;
+            border-radius: 18px;
             color: #d6d6dd;
+        }
+
+        .menu-search:focus-within {
+            background-color: #000000b2;
+            border: 1px solid #f8f8f935;
         }
 
         .menu-search image,
         .menu-search entry {
             color: #fefefec9;
+            margin-right: 5px;
         }
 
         .menu-list {
@@ -161,9 +169,12 @@ fn load_css() {
         }
 
         frame {
-            background-color: #171922;
-            border: 1px solid #22242f;
-            border-radius: 12px;
+            all: unset;
+            min-width: 150px;
+            border-radius: 30px;
+            border: 2px solid #ffffff0e;
+            background-color: #ffffff0f;
+            padding: 20px;
         }
 
         frame > label {
@@ -207,6 +218,12 @@ fn load_css() {
         .shortcut-desc {
             color: #8a8a99;
             font-size: 12px;
+        }
+
+        .frame-title {
+            font-weight: 600;
+            font-size: 18px;
+            color: #f2f2f5;
         }
 
         .row-label {
@@ -991,20 +1008,6 @@ fn build_home_page() -> ScrolledWindow {
     content.append(&usrbox);
     content.append(&cards_box);
 
-    // let bg = gtk4::Image::from_file("/var/lib/cynager/icons/cog_bg.svg");
-    // bg.set_pixel_size(500);
-    // bg.set_hexpand(true);
-    // bg.set_vexpand(true);
-    // bg.set_halign(Align::Start);
-    // bg.set_valign(Align::End);
-
-    // let over = gtk4::Overlay::new();
-    // over.set_child(Some(&bg));
-    // over.add_overlay(&content);
-
-    // let overbox = GtkBox::new(Orientation::Vertical, 0);
-    // overbox.append(&over);
-
     page_scroller(&content)
 }
 
@@ -1122,40 +1125,99 @@ fn build_network_page() -> ScrolledWindow {
 
 fn build_appearance_page() -> ScrolledWindow {
     let content = GtkBox::new(Orientation::Vertical, 16);
+    
+    let card = GtkBox::new(Orientation::Vertical, 10);
+    card.add_css_class("shortcut-card");
+    card.add_css_class("detail-card");
+    card.set_margin_top(10);
+    card.set_hexpand(true);
 
-    let frame = Frame::new(None);
-    let list = ListBox::new();
-    list.set_selection_mode(gtk4::SelectionMode::None);
 
-    let theme = ComboBoxText::new();
-    theme.append_text("Dark");
-    theme.append_text("Light");
-    theme.append_text("System Default");
-    theme.set_active(Some(0));
-    list.append(&ListBoxRow::builder()
-        .child(&labeled_row("Theme", "Application color scheme", &theme))
-        .build());
+    let infoicon = gtk4::Image::from_file("/var/lib/cynager/icons/appearance.svg");
+    infoicon.set_pixel_size(54);
+    infoicon.set_halign(Align::Center);
+    infoicon.set_css_classes(&["card-icons"]);
 
-    list.append(&Separator::new(Orientation::Horizontal));
+    let title = Label::new(Some("Appearance"));
+    title.add_css_class("shortcut-title");
+    title.set_halign(Align::Center);
 
-    let animations = Switch::new();
-    animations.set_active(true);
-    animations.set_valign(Align::Center);
-    list.append(&ListBoxRow::builder()
-        .child(&labeled_row("Animations", "Enable window and menu animations", &animations))
-        .build());
+    let subtitle = Label::new(Some("Change the overall look and theme of the OS."));
+    subtitle.add_css_class("shortcut-desc");
+    subtitle.set_halign(Align::Center);
 
-    list.append(&Separator::new(Orientation::Horizontal));
+    card.append(&infoicon);
+    card.append(&title);
+    card.append(&subtitle);
 
-    let scale_adj = Adjustment::new(1.0, 0.5, 2.0, 0.05, 0.1, 0.0);
-    let ui_scale = Scale::new(Orientation::Horizontal, Some(&scale_adj));
-    ui_scale.set_size_request(180, -1);
-    list.append(&ListBoxRow::builder()
-        .child(&labeled_row("UI Scale", "Interface scaling factor", &ui_scale))
-        .build());
+    content.append(&card);
 
-    frame.set_child(Some(&list));
-    content.append(&frame);
+
+    let wallframe = Frame::new(None);
+
+    let wallbox = GtkBox::new(Orientation::Vertical, 10);
+    let walltitle = Label::new(Some("Wallpaper"));
+    walltitle.add_css_class("frame-title");
+    walltitle.set_halign(Align::Start);
+
+    let wallhead = GtkBox::new(Orientation::Horizontal, 5);
+
+
+    wallbox.append(&walltitle);
+    wallbox.append(&wallhead);
+
+    wallframe.set_child(Some(&wallbox));
+
+    content.append(&wallframe);
+    page_scroller(&content)
+}
+
+fn build_shell_page() -> ScrolledWindow {
+    let content = GtkBox::new(Orientation::Vertical, 16);
+    
+    let card = GtkBox::new(Orientation::Vertical, 10);
+    card.add_css_class("shortcut-card");
+    card.add_css_class("detail-card");
+    card.set_margin_top(10);
+    card.set_hexpand(true);
+
+
+    let infoicon = gtk4::Image::from_file("/var/lib/cynager/icons/shell.svg");
+    infoicon.set_pixel_size(54);
+    infoicon.set_halign(Align::Center);
+    infoicon.set_css_classes(&["card-icons"]);
+
+    let title = Label::new(Some("Shell Settings"));
+    title.add_css_class("shortcut-title");
+    title.set_halign(Align::Center);
+
+    let subtitle = Label::new(Some("Control and setup cynageOS the way you want."));
+    subtitle.add_css_class("shortcut-desc");
+    subtitle.set_halign(Align::Center);
+
+    card.append(&infoicon);
+    card.append(&title);
+    card.append(&subtitle);
+
+    content.append(&card);
+
+
+    let outframe = Frame::new(None);
+
+    let outbox = GtkBox::new(Orientation::Vertical, 10);
+    let outtitle = Label::new(Some("Output"));
+    outtitle.add_css_class("frame-title");
+    outtitle.set_halign(Align::Start);
+
+    let wallhead = GtkBox::new(Orientation::Horizontal, 5);
+
+
+    outbox.append(&outtitle);
+    outbox.append(&wallhead);
+
+    outframe.set_child(Some(&outbox));
+
+    content.append(&outframe);
     page_scroller(&content)
 }
 
@@ -1277,7 +1339,7 @@ fn build_ui(app: &Application, initial_tab: Option<String>) {
     let appearance_page = build_appearance_page();
     stack.add_titled(&appearance_page, Some("appearance"), "Appearance");
 
-    let shellset_page = build_placeholder_page("Shell", "Shell settings are coming soon.");
+    let shellset_page = build_shell_page();
     stack.add_titled(&shellset_page, Some("shellset"), "Shell");
 
     let display_page = build_display_page();
