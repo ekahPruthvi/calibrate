@@ -1,14 +1,24 @@
-use gtk4::prelude::*;
+use gtk4::gdk::Monitor;
+use gtk4::{StackSwitcher, prelude::*};
 use gtk4::{
     Application, ApplicationWindow, Box as GtkBox, Label, ListBox, ListBoxRow,
     Orientation, ScrolledWindow, SearchEntry, Stack, Separator, Switch, Scale, SpinButton,
     Adjustment, ComboBoxText, Frame, Grid, Align, CssProvider, DrawingArea, gdk_pixbuf::Pixbuf,
+    Button, Picture, Dialog, 
 };
 use std::fs;
 use std::process::{Command, exit};
 use std::rc::Rc;
 
+use niri_ipc::{Action, PositionChange, Request, Response, socket::Socket};
+use infoprober::{parse, Entry, Value};
+
+use gtk4::{cairo, gdk_pixbuf::{InterpType}, prelude::*};
+use std::{cell::RefCell, f64::consts::{FRAC_PI_2, PI}};
+
 const APP_ID: &str = "ekah.scu.calibrate";
+
+const CFGPATH: &str = "/var/lib/cynager/info.probe";
 
 const TAB_IDS: &[&str] = &[
     "home", "appearance", "shellset", "display", "sound", "net", "blue", 
@@ -174,7 +184,7 @@ fn load_css() {
             border-radius: 30px;
             border: 2px solid #ffffff0e;
             background-color: #ffffff0f;
-            padding: 20px;
+            padding: 0;
         }
 
         frame > label {
@@ -295,6 +305,64 @@ fn load_css() {
             font-size: 12px;
             font-weight: 300;
             color: #ffffff8d;
+        }
+
+        stackswitcher {
+            all: unset;
+            padding: 6px;
+            background-color: transparent;
+        }
+
+        stackswitcher button {
+            all: unset;
+            color: #d8dee9;
+            border-radius: 50px;
+            padding: 10px;
+            background-color: transparent;
+            
+            transition: background-color 200ms ease-in-out, 
+                        color 200ms ease-in-out, 
+                        transform 150ms cubic-bezier(0.25, 1, 0.5, 1);
+        }
+        
+        stackswitcher button:checked {
+            background-color: #222222;
+            border-radius: 50px;
+            color: #eceff4;
+            font-weight: bold;
+            transform: scale(1.03);
+        }
+
+        stackswitcher button:active {
+            transform: scale(0.96);
+            transition: transform 50ms ease-out;
+        }
+
+        .wallpaperPrev {
+            background-color: black;
+            border-radius: 20px;
+            overflow: hidden;
+            box-shadow: rgba(0, 0, 0, 0.19) 0px 10px 20px, rgba(0, 0, 0, 0.23) 0px 6px 6px;
+        }
+
+        .wallpaperPrev > img {
+            border-radius: 20px;
+            overflow: hidden;
+        }
+
+        .wall-thumb {
+            all:unset;
+            border-radius: 10px;
+            box-shadow: rgba(0, 0, 0, 0.16) 0px 3px 6px, rgba(0, 0, 0, 0.23) 0px 3px 6px;
+            transition: all 200ms cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        .wall-thumb:hover {
+            transform: scale(1.03);
+        }
+
+        .wall-thumb:active {
+            transform: scale(0.9);
         }
 
         "#,
@@ -1123,7 +1191,200 @@ fn build_network_page() -> ScrolledWindow {
     page_scroller(&content)
 }
 
-fn build_appearance_page() -> ScrolledWindow {
+fn get_monitors() -> Vec<(String, String)> {
+    let mut socket = Socket::connect().expect("[calibrate] cannot connect to niri socket");
+
+    let reply = socket.send(Request::Outputs).expect("[calibrate] request to niri error");
+
+    let mut out :Vec<(String, String)>= vec![];
+    match reply {
+        Ok(Response::Outputs(outputs)) => {
+            for (name, outt) in outputs {
+                out.push((name, outt.make));
+            }
+        }
+
+        Ok(response) => {
+            eprintln!("[calibrate] Unexpected response: {response:?}");
+        }
+
+        Err(err) => {
+            eprintln!("[calibrate] Niri IPC error: {err:?}");
+        }
+    }
+
+    return out
+}
+
+fn build_round_wallpaper(path: &str, radius: f64) -> DrawingArea {
+    let area = DrawingArea::new();
+    area.set_hexpand(true);
+    area.set_vexpand(true);
+    area.set_content_width(150);
+    area.set_content_height(84);
+
+    let pixbuf = Pixbuf::from_file(path).ok();
+    let cache: RefCell<Option<((i32, i32), Pixbuf)>> = RefCell::new(None);
+
+    area.set_draw_func(move |_, cr, w, h| {
+        let (wf, hf) = (w as f64, h as f64);
+        let r = radius.min(wf / 2.0).min(hf / 2.0);
+
+        rounded_rect(cr, 0.0, 0.0, wf, hf, r);
+        cr.clip();
+
+        if let Some(pb) = &pixbuf {
+            let (pw, ph) = (pb.width() as f64, pb.height() as f64);
+            let s = (wf / pw).max(hf / ph);
+            let (sw, sh) = ((pw * s).ceil() as i32, (ph * s).ceil() as i32);
+
+            let mut c = cache.borrow_mut();
+            if c.as_ref().map(|(k, _)| *k) != Some((sw, sh)) {
+                *c = pb
+                    .scale_simple(sw, sh, InterpType::Bilinear)
+                    .map(|p| ((sw, sh), p));
+            }
+            if let Some((_, scaled)) = c.as_ref() {
+                let dx = (wf - sw as f64) / 2.0;
+                let dy = (hf - sh as f64) / 2.0;
+                cr.set_source_pixbuf(scaled, dx, dy);
+                cr.paint().unwrap();
+            }
+        }
+
+        let shine = gtk4::cairo::LinearGradient::new(0.0, 0.0, 0.0, hf * 0.6);
+        shine.add_color_stop_rgba(0.0, 1.0, 1.0, 1.0, 0.25);
+        shine.add_color_stop_rgba(1.0, 1.0, 1.0, 1.0, 0.0);
+        cr.set_source(&shine).unwrap();
+        cr.paint().unwrap();
+
+        cr.reset_clip();
+        rounded_rect(cr, 0.5, 0.5, wf - 1.0, hf - 1.0, (r - 0.5).max(0.0));
+        cr.set_source_rgba(1.0, 1.0, 1.0, 0.25);
+        cr.set_line_width(1.0);
+        cr.stroke().unwrap();
+    });
+
+    area
+}
+
+fn build_wall_gallery(monwalls: &Stack) -> ScrolledWindow {
+    let scroller = ScrolledWindow::builder()
+        .hscrollbar_policy(gtk4::PolicyType::Automatic)
+        .vscrollbar_policy(gtk4::PolicyType::Never)
+        .hexpand(true)
+        .height_request(120)
+        .margin_top(10)
+        .build();
+
+    let row = GtkBox::new(Orientation::Horizontal, 10);
+    row.set_margin_top(10);
+    row.set_margin_bottom(10);
+    row.set_margin_start(10);
+    row.set_margin_end(10);
+
+    let home = std::env::var("HOME").unwrap_or_default();
+    let walls_dir = format!("{home}/.config/walls");
+
+    let mut paths: Vec<std::path::PathBuf> = fs::read_dir(&walls_dir)
+        .into_iter()
+        .flatten()
+        .filter_map(|e| e.ok())
+        .map(|e| e.path())
+        .filter(|p| p.is_file())
+        .collect();
+    paths.sort();
+
+    for path in paths {
+        let Some(path_str) = path.to_str() else { continue };
+
+        let thumb = build_round_wallpaper(path_str, 10.0);
+        thumb.set_content_width(200);
+        thumb.set_content_height(120);
+        thumb.set_hexpand(false);
+        thumb.set_vexpand(false);
+
+        let btn = Button::new();
+        btn.set_child(Some(&thumb));
+        btn.add_css_class("wall-thumb");
+        btn.set_tooltip_text(Some(path_str));
+        btn.set_margin_bottom(10);
+        btn.set_margin_end(5);
+        btn.set_margin_start(5);
+        btn.set_margin_top(5);
+
+        let monwalls = monwalls.clone();
+        let path_owned = path_str.to_string();
+        btn.connect_clicked(move |_| {
+            if let Some(visible_widget) = monwalls.visible_child() {
+                if let Some(monitor) = monwalls.visible_child_name() {
+                    switch_wall(monitor.as_str(), &path_owned);
+                } else {
+                    eprintln!("[calibrate] no monitor tab selected, not switching wallpaper");
+                }
+                if let Ok(visible_box) = visible_widget.downcast::<GtkBox>() {
+                    while let Some(child) = visible_box.first_child() {
+                        visible_box.remove(&child);
+                    }
+                    visible_box.set_css_classes(&["wallpaperPrev"]);
+                    visible_box.set_hexpand(false);
+                    visible_box.set_vexpand(false);
+                    visible_box.set_halign(Align::Start);
+                    visible_box.set_height_request(200);
+                    visible_box.set_width_request(300);
+                    visible_box.set_margin_bottom(20);
+                    visible_box.set_margin_end(10);
+                    visible_box.set_margin_start(10);
+                    visible_box.set_margin_top(10);
+                    let wallrnimg = build_round_wallpaper(&path_owned, 20.0);
+                    wallrnimg.set_tooltip_text(Some(&path_owned));
+                    visible_box.append(&wallrnimg);
+                }
+            }
+        });
+
+        row.append(&btn);
+    }
+
+    scroller.set_child(Some(&row));
+    scroller
+}
+
+fn switch_wall(monitor: &str, path: &str) {
+    let home = std::env::var("HOME").unwrap_or_default();
+    let rel = path.strip_prefix(&home).map(|p| p.trim_start_matches('/')).unwrap_or(path);
+
+    let src = match fs::read_to_string(CFGPATH) {
+        Ok(s) => s,
+        Err(e) => return eprintln!("[calibrate] failed to read cfg: {e}"),
+    };
+    let mut doc = match parse(&src) {
+        Ok(d) => d,
+        Err(e) => return eprintln!("[calibrate] failed to parse cfg: {e}"),
+    };
+
+    let set = doc.section_or_insert("set");
+    match set.get_mut("walls") {
+        Some(Value::Map(walls)) => {
+            walls.retain(|e| e.value.as_str() != Some(monitor));
+            walls.push(Entry::new(rel.to_string(), monitor.to_string()));
+        }
+        Some(Value::Str(_)) => return eprintln!("[calibrate] `walls` in cfg is not a map"),
+        None => set.push("walls", vec![Entry::new(rel.to_string(), monitor.to_string())]),
+    }
+
+    if let Err(e) = doc.validate() {
+        return eprintln!("[calibrate] not writing cfg: {e}");
+    }
+    if let Err(e) = fs::write(CFGPATH, doc.render()) {
+        return eprintln!("[calibrate] failed to write cfg: {e}");
+    }
+
+    println!("[calibrate] {monitor} -> {rel}");
+}
+
+
+fn build_appearance_page(window: &ApplicationWindow) -> ScrolledWindow {
     let content = GtkBox::new(Orientation::Vertical, 16);
     
     let card = GtkBox::new(Orientation::Vertical, 10);
@@ -1158,13 +1419,179 @@ fn build_appearance_page() -> ScrolledWindow {
     let wallbox = GtkBox::new(Orientation::Vertical, 10);
     let walltitle = Label::new(Some("Wallpaper"));
     walltitle.add_css_class("frame-title");
+    walltitle.set_margin_start(20);
+    walltitle.set_margin_top(20);
+    walltitle.set_margin_end(20);
     walltitle.set_halign(Align::Start);
 
     let wallhead = GtkBox::new(Orientation::Horizontal, 5);
+    wallhead.set_margin_start(20);
+    wallhead.set_margin_end(20);
+    wallhead.set_hexpand(true);
 
+    let mons = get_monitors();
+    
+    let monwalls = Stack::new();
+    monwalls.set_margin_start(20);
+    monwalls.set_transition_type(gtk4::StackTransitionType::SlideLeftRight);
+    monwalls.set_vexpand(true);
+
+    let src = fs::read_to_string(CFGPATH).expect("[calibrate] failed to read cfg PATH");
+    let mut doc = parse(&src).expect("[calibrate] failed to parse cfg");
+    let mut changed = false;
+
+    for (monitor, title) in mons {
+        let monbox = GtkBox::new(Orientation::Vertical, 10);
+        monbox.set_hexpand(true);
+        monbox.set_vexpand(true);
+
+        let found: Option<String> = doc
+            .get("set", "walls")
+            .and_then(|v| v.as_map())
+            .and_then(|walls| walls.iter().find(|e| e.value.as_str() == Some(monitor.as_str())))
+            .map(|e| e.key.to_string());
+
+        let wallpaper: String = match found {
+            Some(w) => w,
+            None => {
+                let set = doc.section_or_insert("set");
+                match set.get_mut("walls") {
+                    Some(Value::Map(walls)) => {
+                        walls.push(Entry::new("none", monitor.clone()));
+                        changed = true;
+                    }
+                    Some(Value::Str(_)) => eprintln!(
+                        "[calibrate] `walls` in cfg must be a map, like:\n
+                            walls :{{\n
+                                    .config/walls/weonlygotearth.png :eDP-1\n
+                            }}"
+                    ),
+                    None => {
+                        set.push("walls", vec![Entry::new("none", monitor.clone())]);
+                        changed = true;
+                    }
+                }
+                "none".to_string()
+            }
+        };
+
+        let wallrnpreview = GtkBox::builder()
+            .css_classes(["wallpaperPrev"])
+            .hexpand(false)
+            .vexpand(false)
+            .halign(Align::Start)
+            .height_request(200)
+            .width_request(300)
+            .margin_bottom(20)
+            .margin_end(10)
+            .margin_start(10)
+            .margin_top(10)
+            .build();
+
+        if wallpaper != "none" {
+            let path = format!("{}/{}", std::env::var("HOME").unwrap_or_default(), wallpaper);
+            let wallrnimg = build_round_wallpaper(&path, 20.0);
+            wallrnimg.set_tooltip_text(Some(&wallpaper));
+            wallrnpreview.append(&wallrnimg);
+        }
+
+        monbox.append(&wallrnpreview);
+
+        monwalls.add_titled(&monbox, Some(&monitor), &title);
+    }
+
+    if changed {
+        match doc.validate() {
+            Ok(()) => {
+                if let Err(e) = fs::write(CFGPATH, doc.render()) {
+                    eprintln!("[calibrate] failed to write cfg: {e}");
+                }
+            }
+            Err(e) => eprintln!("[calibrate] not writing cfg: {e}"),
+        }
+    }
+
+    let montab = StackSwitcher::builder()
+        .stack(&monwalls)
+        .valign(Align::Start)
+        .halign(Align::Start)
+        .build();
+
+    let addbtn = Button::new();
+
+    let plus = Label::new(Some("Add Wallpaper"));
+    addbtn.set_child(Some(&plus));
+    addbtn.add_css_class("sub-btn");
+    addbtn.set_halign(Align::End);
+    addbtn.set_hexpand(true);
+
+    let parent = window.clone();
+
+    addbtn.connect_clicked(move |_| {
+        let dialog = Dialog::builder()
+            .transient_for(&parent)
+            .modal(true)
+            .title("wallpaper portal")
+            .build();
+
+        dialog.add_button("Cancel", gtk4::ResponseType::Cancel);
+
+        let content = dialog.content_area();
+
+        let box_ = GtkBox::new(Orientation::Vertical, 8);
+        box_.set_margin_top(16);
+        box_.set_margin_bottom(16);
+        box_.set_margin_start(16);
+        box_.set_margin_end(16);
+
+        let title = Label::new(Some("Connected Monitors"));
+        title.add_css_class("title");
+
+        box_.append(&title);
+
+        if let Ok(mut socket) = Socket::connect() {
+            if let Ok(Ok(Response::Outputs(outputs))) =
+                socket.send(Request::Outputs)
+            {
+                for (name, output) in outputs {
+                    let row = GtkBox::new(Orientation::Horizontal, 12);
+
+                    let monitor = Label::new(Some(&format!(
+                        "{} — {} {}",
+                        name,
+                        output.make,
+                        output.model
+                    )));
+
+                    monitor.set_hexpand(true);
+                    monitor.set_xalign(0.0);
+
+                    let add = Button::with_label("Add");
+
+                    row.append(&monitor);
+                    row.append(&add);
+
+                    box_.append(&row);
+                }
+            }
+        }
+
+        content.append(&box_);
+
+        dialog.connect_response(|dialog, _| {
+            dialog.close();
+        });
+
+        dialog.present();
+    });
+
+    wallhead.append(&montab);
+    wallhead.append(&addbtn);
 
     wallbox.append(&walltitle);
     wallbox.append(&wallhead);
+    wallbox.append(&monwalls);
+    wallbox.append(&build_wall_gallery(&monwalls)); 
 
     wallframe.set_child(Some(&wallbox));
 
@@ -1336,7 +1763,7 @@ fn build_ui(app: &Application, initial_tab: Option<String>) {
     let home_page = build_home_page();
     stack.add_titled(&home_page, Some("home"), "Home");
 
-    let appearance_page = build_appearance_page();
+    let appearance_page = build_appearance_page(&window);
     stack.add_titled(&appearance_page, Some("appearance"), "Appearance");
 
     let shellset_page = build_shell_page();
