@@ -1,20 +1,19 @@
-use gtk4::gdk::Monitor;
-use gtk4::{StackSwitcher, prelude::*};
+use gtk4::prelude::*;
 use gtk4::{
     Application, ApplicationWindow, Box as GtkBox, Label, ListBox, ListBoxRow,
     Orientation, ScrolledWindow, SearchEntry, Stack, Separator, Switch, Scale, SpinButton,
     Adjustment, ComboBoxText, Frame, Grid, Align, CssProvider, DrawingArea, gdk_pixbuf::Pixbuf,
-    Button, Picture, Dialog, 
+    Button, Dialog, DropTarget, StackSwitcher, gio, gdk, glib,
 };
 use std::fs;
 use std::process::{Command, exit};
-use std::rc::Rc;
+use std::{rc::Rc, path::PathBuf};
 
-use niri_ipc::{Action, PositionChange, Request, Response, socket::Socket};
+use niri_ipc::{Request, Response, socket::Socket};
 use infoprober::{parse, Entry, Value};
 
-use gtk4::{cairo, gdk_pixbuf::{InterpType}, prelude::*};
-use std::{cell::RefCell, f64::consts::{FRAC_PI_2, PI}};
+use gtk4:: gdk_pixbuf::{InterpType};
+use std::cell::RefCell;
 
 const APP_ID: &str = "ekah.scu.calibrate";
 
@@ -316,7 +315,7 @@ fn load_css() {
         stackswitcher button {
             all: unset;
             color: #d8dee9;
-            border-radius: 50px;
+            border-radius: 10px;
             padding: 10px;
             background-color: transparent;
             
@@ -327,10 +326,9 @@ fn load_css() {
         
         stackswitcher button:checked {
             background-color: #222222;
-            border-radius: 50px;
+            border-radius: 15px;
             color: #eceff4;
             font-weight: bold;
-            transform: scale(1.03);
         }
 
         stackswitcher button:active {
@@ -341,13 +339,11 @@ fn load_css() {
         .wallpaperPrev {
             background-color: black;
             border-radius: 20px;
-            overflow: hidden;
             box-shadow: rgba(0, 0, 0, 0.19) 0px 10px 20px, rgba(0, 0, 0, 0.23) 0px 6px 6px;
         }
 
         .wallpaperPrev > img {
             border-radius: 20px;
-            overflow: hidden;
         }
 
         .wall-thumb {
@@ -363,6 +359,95 @@ fn load_css() {
 
         .wall-thumb:active {
             transform: scale(0.9);
+        }
+
+        .sub-btn {
+            all: unset;
+            min-width: 160px;
+            border-radius: 15px;
+            border: none;
+            padding: 10px;
+
+            background: linear-gradient(#fff2, #0001),  #d8ff7c;
+            box-shadow:
+                1px 1px 2px -1px #fff inset,
+                0 2px 1px #00000010,
+                0 4px 2px #00000010,
+                0 8px 4px #00000010,
+                0 16px 8px #00000010,
+                0 32px 16px #00000010;
+            color: black;
+            transition:
+                transform var(--duration) var(--timing-function),
+                filter var(--duration) var(--timing-function);
+        }
+
+        .sub-btn:hover {
+            transform: scale(1.03);
+        }
+
+        .sub-btn:active {
+            transform: scale(0.9);
+        }
+
+        .destructive-action {
+            all: unset;
+            min-width: 160px;
+            border-radius: 15px;
+            border: none;
+            padding: 10px;
+
+            background: linear-gradient(#fff2, #0001),  #ff7c7c;
+            box-shadow:
+                1px 1px 2px -1px #fff inset,
+                0 2px 1px #00000010,
+                0 4px 2px #00000010,
+                0 8px 4px #00000010,
+                0 16px 8px #00000010,
+                0 32px 16px #00000010;
+            color: black;
+            transition:
+                transform var(--duration) var(--timing-function),
+                filter var(--duration) var(--timing-function);
+        }
+
+        .destructive-action:hover {
+            background: linear-gradient(#fff2, #0001),  #e76e6e;
+        }
+
+        .destructive-action:active {
+            transform: scale(0.9);
+        }
+
+        .drop-zone {
+            border: 2px dashed alpha(currentColor, 0.35);
+            border-radius: 12px;
+            background-color: alpha(currentColor, 0.03);
+            transition: all 200ms ease;
+        }
+        .drop-zone.drag-active {
+            border-color: @accent_color;
+            background-color: alpha(@accent_color, 0.08);
+        }
+        .drop-zone.success {
+            border-color: @success_color;
+            background-color: alpha(@success_color, 0.08);
+        }
+        .tick {
+            color: @success_color;
+            font-size: 48px;
+        }
+
+        .popoverd {
+            padding: 2px;
+            border: 2px solid transparent;
+            background-image: 
+                linear-gradient(rgb(6, 6, 6), rgb(6, 6, 6)),
+                linear-gradient(0deg, rgb(9, 9, 9), rgba(61, 61, 61, 0.686));
+            background-origin: border-box;
+            background-clip: padding-box, border-box;
+            border-radius: 15px;
+            transition: all 0.5s ease;
         }
 
         "#,
@@ -1268,7 +1353,21 @@ fn build_round_wallpaper(path: &str, radius: f64) -> DrawingArea {
     area
 }
 
-fn build_wall_gallery(monwalls: &Stack) -> ScrolledWindow {
+fn refresh_wall_gallery(wallbox: &GtkBox, monwalls: &Stack, gallery_holder: &Rc<RefCell<ScrolledWindow>>) {
+    let old_gallery = gallery_holder.borrow().clone();
+    wallbox.remove(&old_gallery);
+
+    let new_gallery = build_wall_gallery(monwalls, wallbox, gallery_holder);
+    wallbox.append(&new_gallery);
+
+    *gallery_holder.borrow_mut() = new_gallery;
+}
+
+fn build_wall_gallery(
+    monwalls: &Stack,
+    wallbox: &GtkBox,
+    gallery_holder: &Rc<RefCell<ScrolledWindow>>,
+) -> ScrolledWindow {
     let scroller = ScrolledWindow::builder()
         .hscrollbar_policy(gtk4::PolicyType::Automatic)
         .vscrollbar_policy(gtk4::PolicyType::Never)
@@ -1315,7 +1414,10 @@ fn build_wall_gallery(monwalls: &Stack) -> ScrolledWindow {
 
         let monwalls = monwalls.clone();
         let path_owned = path_str.to_string();
-        btn.connect_clicked(move |_| {
+        btn.connect_clicked({
+            let monwalls = monwalls.clone();
+            let path_owned = path_owned.clone();
+            move |_| {
             if let Some(visible_widget) = monwalls.visible_child() {
                 if let Some(monitor) = monwalls.visible_child_name() {
                     switch_wall(monitor.as_str(), &path_owned);
@@ -1341,7 +1443,54 @@ fn build_wall_gallery(monwalls: &Stack) -> ScrolledWindow {
                     visible_box.append(&wallrnimg);
                 }
             }
-        });
+        }});
+
+        let popover = gtk4::Popover::new();
+        popover.set_parent(&btn);
+        popover.set_css_classes(&["popoverd"]);
+        popover.set_has_arrow(false);
+        popover.set_autohide(true);
+
+        let popover_box = GtkBox::new(Orientation::Vertical, 0);
+        let delete_item = Button::new();
+        delete_item.set_label("Delete Wallpaper");
+        delete_item.add_css_class("flat");
+        delete_item.add_css_class("destructive-action");
+        popover_box.append(&delete_item);
+        popover.set_child(Some(&popover_box));
+
+        {
+            let popover = popover.clone();
+            let path_owned = path_owned.clone();
+            let wallbox = wallbox.clone();
+            let monwalls = monwalls.clone();
+            let gallery_holder = gallery_holder.clone();
+            delete_item.connect_clicked(move |_| {
+                popover.popdown();
+                if let Err(e) = fs::remove_file(&path_owned) {
+                    eprintln!("[calibrate] failed to delete wallpaper {}: {e}", path_owned);
+                } else {
+                    println!("[calibrate] deleted wallpaper {}", path_owned);
+                }
+                refresh_wall_gallery(&wallbox, &monwalls, &gallery_holder);
+            });
+        }
+
+        let right_click = gtk4::GestureClick::new();
+        right_click.set_button(gdk::BUTTON_SECONDARY);
+        {
+            let popover = popover.clone();
+            right_click.connect_pressed(move |_, _, x, y| {
+                popover.set_pointing_to(Some(&gdk::Rectangle::new(
+                    x as i32,
+                    y as i32,
+                    1,
+                    1,
+                )));
+                popover.popup();
+            });
+        }
+        btn.add_controller(right_click);
 
         row.append(&btn);
     }
@@ -1523,62 +1672,166 @@ fn build_appearance_page(window: &ApplicationWindow) -> ScrolledWindow {
     addbtn.set_child(Some(&plus));
     addbtn.add_css_class("sub-btn");
     addbtn.set_halign(Align::End);
+    addbtn.set_valign(Align::Center);
     addbtn.set_hexpand(true);
 
     let parent = window.clone();
+    let gallery_holder: Rc<RefCell<ScrolledWindow>> = Rc::new(RefCell::new(ScrolledWindow::new()));
+    let initial_gallery = build_wall_gallery(&monwalls, &wallbox, &gallery_holder);
+    *gallery_holder.borrow_mut() = initial_gallery;
+
+    let wallbox_for_add = wallbox.clone();
+    let monwalls_for_add = monwalls.clone();
+    let gallery_holder_for_add = gallery_holder.clone();
 
     addbtn.connect_clicked(move |_| {
+        let wallbox = wallbox_for_add.clone();
+        let monwalls = monwalls_for_add.clone();
+        let gallery_holder = gallery_holder_for_add.clone();
+
+        fn walls_dir() -> PathBuf {
+            let mut dir = glib::home_dir();
+            dir.push(".config");
+            dir.push("walls");
+            dir
+        }
+
         let dialog = Dialog::builder()
             .transient_for(&parent)
             .modal(true)
-            .title("wallpaper portal")
+            .title("Add new wallpaper")
             .build();
-
-        dialog.add_button("Cancel", gtk4::ResponseType::Cancel);
 
         let content = dialog.content_area();
 
-        let box_ = GtkBox::new(Orientation::Vertical, 8);
-        box_.set_margin_top(16);
-        box_.set_margin_bottom(16);
-        box_.set_margin_start(16);
-        box_.set_margin_end(16);
+        let outer = GtkBox::new(Orientation::Vertical, 8);
+        outer.set_margin_top(16);
+        outer.set_margin_bottom(16);
+        outer.set_margin_start(16);
+        outer.set_margin_end(16);
 
-        let title = Label::new(Some("Connected Monitors"));
+        let title = Label::new(Some("Add Wallpaper"));
         title.add_css_class("title");
+        outer.append(&title);
+        
+        let drop_box = GtkBox::new(Orientation::Vertical, 12);
+        drop_box.set_halign(Align::Fill);
+        drop_box.set_valign(Align::Fill);
+        drop_box.set_hexpand(true);
+        drop_box.set_vexpand(true);
+        drop_box.set_size_request(360, 220);
+        drop_box.add_css_class("drop-zone");
 
-        box_.append(&title);
+        let icon = gtk4::Image::from_icon_name("image-x-generic-symbolic");
+        icon.set_pixel_size(48);
+        icon.set_vexpand(true);
+        icon.set_valign(Align::End);
 
-        if let Ok(mut socket) = Socket::connect() {
-            if let Ok(Ok(Response::Outputs(outputs))) =
-                socket.send(Request::Outputs)
-            {
-                for (name, output) in outputs {
-                    let row = GtkBox::new(Orientation::Horizontal, 12);
+        let hint = Label::new(Some("Drag & drop images here"));
+        hint.add_css_class("dim-label");
+        hint.set_vexpand(true);
+        hint.set_valign(Align::Start);
 
-                    let monitor = Label::new(Some(&format!(
-                        "{} — {} {}",
-                        name,
-                        output.make,
-                        output.model
-                    )));
+        drop_box.append(&icon);
+        drop_box.append(&hint);
 
-                    monitor.set_hexpand(true);
-                    monitor.set_xalign(0.0);
+        let target = DropTarget::new(gio::File::static_type(), gdk::DragAction::COPY);
 
-                    let add = Button::with_label("Add");
-
-                    row.append(&monitor);
-                    row.append(&add);
-
-                    box_.append(&row);
-                }
-            }
+        {
+            let drop_box = drop_box.clone();
+            target.connect_enter(move |_, _, _| {
+                drop_box.add_css_class("drag-active");
+                gdk::DragAction::COPY
+            });
+        }
+        {
+            let drop_box = drop_box.clone();
+            target.connect_leave(move |_| {
+                drop_box.remove_css_class("drag-active");
+            });
         }
 
-        content.append(&box_);
+        {
+            let drop_box = drop_box.clone();
+            let icon = icon.clone();
+            let hint = hint.clone();
+            let dialog = dialog.clone();
 
-        dialog.connect_response(|dialog, _| {
+            target.connect_drop(move |_, value, _, _| {
+                let Ok(file) = value.get::<gtk4::gio::File>() else {
+                    return false;
+                };
+                let Some(path) = file.path() else {
+                    return false;
+                };
+
+                let is_image: bool = path
+                    .extension()
+                    .and_then(|e| e.to_str())
+                    .map(|e| matches!(e.to_lowercase().as_str(), "png" | "jpg" | "jpeg" | "webp" | "bmp" | "gif"))
+                    .unwrap_or(false);
+
+                if !is_image {
+                    return false;
+                }
+
+                let dest_dir = walls_dir();
+                if let Err(e) = fs::create_dir_all(&dest_dir) {
+                    eprintln!("failed to create walls dir: {e}");
+                    return false;
+                }
+
+                let Some(filename) = path.file_name() else {
+                    return false;
+                };
+                let dest = dest_dir.join(filename);
+
+                match fs::copy(&path, &dest) {
+                    Ok(_) => {
+                        drop_box.remove_css_class("drag-active");
+                        drop_box.add_css_class("success");
+
+                        drop_box.remove(&icon);
+                        drop_box.remove(&hint);
+
+                        let tick = Label::new(Some("✓"));
+                        tick.add_css_class("tick");
+                        tick.set_vexpand(true);
+                        tick.set_valign(Align::End);
+                        let done = Label::new(Some("Added"));
+                        done.add_css_class("dim-label");
+                        done.set_vexpand(true);
+                        done.set_valign(Align::Start);
+                        drop_box.append(&tick);
+                        drop_box.append(&done);
+
+                        let dialog = dialog.clone();
+                        gtk4::glib::timeout_add_local_once(
+                            std::time::Duration::from_millis(650),
+                            move || {
+                                dialog.response(gtk4::ResponseType::Accept);
+                                dialog.close();
+                            },
+                        );
+                        true
+                    }
+                    Err(e) => {
+                        eprintln!("failed to copy wallpaper: {e}");
+                        false
+                    }
+                }
+            });
+        }
+
+        drop_box.add_controller(target);
+        outer.append(&drop_box);
+
+        content.append(&outer);
+
+        dialog.connect_response(move |dialog, response| {
+            if response == gtk4::ResponseType::Accept {
+                refresh_wall_gallery(&wallbox, &monwalls, &gallery_holder);
+            }
             dialog.close();
         });
 
@@ -1591,7 +1844,7 @@ fn build_appearance_page(window: &ApplicationWindow) -> ScrolledWindow {
     wallbox.append(&walltitle);
     wallbox.append(&wallhead);
     wallbox.append(&monwalls);
-    wallbox.append(&build_wall_gallery(&monwalls)); 
+    wallbox.append(&*gallery_holder.borrow());
 
     wallframe.set_child(Some(&wallbox));
 
