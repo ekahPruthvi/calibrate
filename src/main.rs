@@ -237,6 +237,12 @@ fn load_css() {
             color: #f2f2f5;
         }
 
+        .frame-subtitle {
+            font-weight: 300;
+            font-size: 12px;
+            color: #f2f2f567;
+        }
+
         .row-label {
             color: #d6d6dd;
         }
@@ -1853,14 +1859,21 @@ fn build_appearance_page(window: &ApplicationWindow) -> ScrolledWindow {
     let themeframe = Frame::new(None);
 
     let themebox = GtkBox::new(Orientation::Vertical, 10);
-    let themetitle = Label::new(Some("Themes"));
+    let themetitle = Label::new(Some("Theme Mode Toggle"));
     themetitle.add_css_class("frame-title");
     themetitle.set_margin_start(20);
     themetitle.set_margin_top(20);
-    themetitle.set_margin_end(20);
+    themetitle.set_margin_end(10);
     themetitle.set_halign(Align::Start);
+
+    let themesubtitle = Label::new(Some("Change the theme Dark/Light mode for GTK based applications."));
+    themesubtitle.add_css_class("frame-subtitle");
+    themesubtitle.set_margin_start(20);
+    themesubtitle.set_margin_end(20);
+    themesubtitle.set_halign(Align::Start);
     
     themebox.append(&themetitle);
+    themebox.append(&themesubtitle);
     themeframe.set_child(Some(&themebox));
 
     content.append(&wallframe);
