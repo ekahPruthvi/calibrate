@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Calibrate
+Comment=System settings for cynageOS
+Exec=/usr/bin/calibrate
+Icon=preferences-system
+Terminal=false
+Categories=Settings;
+StartupWMClass=ekah.scu.calibrate

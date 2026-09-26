@@ -15,6 +15,8 @@ use infoprober::{parse, Entry, Value};
 use gtk4:: gdk_pixbuf::{InterpType};
 use std::cell::RefCell;
 
+use self_update::cargo_crate_version;
+
 const APP_ID: &str = "ekah.scu.calibrate";
 
 const CFGPATH: &str = "/var/lib/cynager/info.probe";
@@ -1848,7 +1850,21 @@ fn build_appearance_page(window: &ApplicationWindow) -> ScrolledWindow {
 
     wallframe.set_child(Some(&wallbox));
 
+    let themeframe = Frame::new(None);
+
+    let themebox = GtkBox::new(Orientation::Vertical, 10);
+    let themetitle = Label::new(Some("Themes"));
+    themetitle.add_css_class("frame-title");
+    themetitle.set_margin_start(20);
+    themetitle.set_margin_top(20);
+    themetitle.set_margin_end(20);
+    themetitle.set_halign(Align::Start);
+    
+    themebox.append(&themetitle);
+    themeframe.set_child(Some(&themebox));
+
     content.append(&wallframe);
+    content.append(&themeframe);
     page_scroller(&content)
 }
 
@@ -2009,6 +2025,8 @@ fn build_ui(app: &Application, initial_tab: Option<String>) {
         .resizable(true)
         .build();
 
+    window.connect_map(|_| println!("ready"));
+
     let stack = Stack::new();
     stack.set_transition_type(gtk4::StackTransitionType::SlideUpDown);
     stack.set_transition_duration(300);
@@ -2105,12 +2123,95 @@ fn build_ui(app: &Application, initial_tab: Option<String>) {
     window.present();
 }
 
+struct UpdateOutcome {
+    updated: bool,
+    version: String,
+}
+
+const CALIBRATE_BIN_PATH: &str = "/usr/bin/calibrate";
+
+fn ensure_writable(path: &str) -> Result<(), String> {
+    use std::ffi::CString;
+
+    let c_path = CString::new(path).map_err(|e| e.to_string())?;
+
+    let path_obj = std::path::Path::new(path);
+    if path_obj.exists() {
+        let writable = unsafe { libc::access(c_path.as_ptr(), libc::W_OK) == 0 };
+        if !writable {
+            return Err(format!(
+                "no write permission for '{}'. Try: sudo calibrate --update",
+                path
+            ));
+        }
+    }
+
+    if let Some(parent) = path_obj.parent() {
+        let c_parent = CString::new(parent.to_string_lossy().to_string())
+            .map_err(|e| e.to_string())?;
+        let dir_writable = unsafe { libc::access(c_parent.as_ptr(), libc::W_OK) == 0 };
+        if !dir_writable {
+            return Err(format!(
+                "no write permission for directory '{}'. Try: sudo calibrate --update",
+                parent.display()
+            ));
+        }
+    }
+
+    Ok(())
+}
+
+fn check_for_updates() -> Result<UpdateOutcome, Box<dyn std::error::Error>> {
+    let status = self_update::backends::github::Update::configure()
+        .repo_owner("ekahPruthvi")
+        .repo_name("calibrate")
+        .bin_name("calibrate")
+        .target("x86_64")
+        .bin_install_path(CALIBRATE_BIN_PATH)
+        .show_download_progress(true)
+        .no_confirm(true)
+        .current_version(cargo_crate_version!())
+        .build()?
+        .update()?;
+
+    Ok(UpdateOutcome {
+        updated: status.is_updated(),
+        version: status.version().to_string(),
+    })
+}
+
+fn run_update() -> i32 {
+    println!("Checking for updates...");
+
+    if let Err(msg) = ensure_writable(CALIBRATE_BIN_PATH) {
+        eprintln!("Cannot update calibrate: {}", msg);
+        return 1;
+    }
+
+    match check_for_updates() {
+        Ok(outcome) => {
+            if outcome.updated {
+                println!("calibrate updated to version {}", outcome.version);
+            } else {
+                println!("calibrate is already up to date ({})", outcome.version);
+            }
+            0
+        }
+        Err(e) => {
+            eprintln!("Update failed: {}", e);
+            1
+        }
+    }
+}
+
 fn main() -> gtk4::glib::ExitCode {
     let args: Vec<String> = std::env::args().collect();
     
     if args.len() > 1 && (args[1] == "--version" || args[1] == "-V") {
         println!("{} {}", env!("CARGO_PKG_NAME"), env!("CARGO_PKG_VERSION"));
         exit(1);
+    } else if args.len() > 1 && (args[1] == "--update" || args[1] == "-U") {
+        exit(run_update());
     }
 
     let initial_tab = parse_tab_arg();
