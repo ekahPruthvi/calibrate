@@ -2,18 +2,13 @@ use gtk4::prelude::*;
 use gtk4::{
     Application, ApplicationWindow, Box as GtkBox, Label, ListBox, ListBoxRow,
     Orientation, ScrolledWindow, SearchEntry, Stack, Separator, Switch, Scale, SpinButton,
-    Adjustment, ComboBoxText, Frame, Grid, Align, CssProvider, DrawingArea, gdk_pixbuf::Pixbuf,
-    Button, Dialog, DropTarget, StackSwitcher, gio, gdk, glib,
+    Adjustment, ComboBoxText, Frame, Align, CssProvider,
 };
 use std::fs;
-use std::process::{Command, exit};
-use std::{rc::Rc, path::PathBuf};
+use std::process::exit;
+use std::rc::Rc;
 
-use niri_ipc::{Request, Response, socket::Socket};
-use infoprober::{parse, Entry, Value};
 
-use gtk4:: gdk_pixbuf::{InterpType};
-use std::cell::RefCell;
 
 use self_update::cargo_crate_version;
 
@@ -387,8 +382,7 @@ fn load_css() {
                 0 32px 16px #00000010;
             color: black;
             transition:
-                transform var(--duration) var(--timing-function),
-                filter var(--duration) var(--timing-function);
+                all 200ms cubic-bezier(0.4, 0, 0.2, 1);
         }
 
         .sub-btn:hover {
@@ -457,6 +451,99 @@ fn load_css() {
             background-clip: padding-box, border-box;
             border-radius: 15px;
             transition: all 0.5s ease;
+        }
+
+        .ghostBtn {
+            all: unset;
+            transition: all 200ms cubic-bezier(0.4, 0, 0.2, 1);
+            border-radius: 20px;
+            border: 1px solid #fffbfb21;
+            box-shadow: rgba(0, 0, 0, 0.16) 0px 3px 6px, rgba(0, 0, 0, 0.23) 0px 3px 6px;
+        }
+
+        .ghostBtn:hover {
+            transform: scale(1.03);
+        }
+
+        .ghostBtn:active {
+            transform: scale(0.999);
+        }
+
+        /* ---------- Ghost theme preview styling ---------- */
+
+        /* Window frame */
+        .ghost-win {
+            border-radius: 20px;
+            border: 1px solid alpha(black, 0.15);
+            padding: 10px;
+        }
+
+        .ghost-win.ghost-light {
+            background-color: #e7e7e7;
+        }
+
+        .ghost-win.ghost-dark {
+            background-color: #242424;
+        }
+
+        /* Sidebar */
+        .ghost-sidebar {
+            padding: 10px;
+        }
+
+        .ghost-sidebar.ghost-light {
+            background-color: #e7e7e7;
+        }
+
+        .ghost-sidebar.ghost-dark {
+            background-color: #242424;
+        }
+
+        .ghost-sidebar-item {
+            border-radius: 3px;
+        }
+
+        .ghost-sidebar-item.ghost-light {
+            background-color: alpha(black, 0.12);
+        }
+
+        .ghost-sidebar-item.ghost-dark {
+            background-color: alpha(white, 0.14);
+        }
+
+        /* Main pane */
+        .ghost-main {
+            border-radius: 10px;
+        }
+
+        .ghost-main.ghost-light {
+            background-color: #ffffff;
+        }
+
+        .ghost-main.ghost-dark {
+            background-color: #2b2b2b;
+        }
+
+        /* Titlebar */
+        .ghost-titlebar.ghost-light {
+            background-color: transparent;
+        }
+
+        .ghost-titlebar.ghost-dark {
+            background-color: transparent;
+        }
+
+        /* Fake content lines */
+        .ghost-content-line {
+            border-radius: 2px;
+        }
+
+        .ghost-content-line.ghost-light {
+            background-color: alpha(black, 0.10);
+        }
+
+        .ghost-content-line.ghost-dark {
+            background-color: alpha(white, 0.12);
         }
 
         "#,

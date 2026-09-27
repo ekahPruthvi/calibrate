@@ -1,8 +1,7 @@
 use gtk4::prelude::*;
 use gtk4::{
-    Application, ApplicationWindow, Box as GtkBox, Label, ListBox, ListBoxRow,
-    Orientation, ScrolledWindow, SearchEntry, Stack, Separator, Switch, Scale, SpinButton,
-    Adjustment, ComboBoxText, Frame, Grid, Align, CssProvider, DrawingArea, gdk_pixbuf::Pixbuf,
+    ApplicationWindow, Box as GtkBox, Label,
+    Orientation, ScrolledWindow, Stack, Frame, Align, DrawingArea, gdk_pixbuf::Pixbuf,
     Button, Dialog, DropTarget, StackSwitcher, gio, gdk, glib,
 };
 use std::fs;
@@ -275,14 +274,88 @@ fn switch_wall(monitor: &str, path: &str) {
 }
 
 fn build_ghost_for_theme(light: bool) -> GtkBox {
+    let theme_class = if light { "ghost-light" } else { "ghost-dark" };
+
     let ghost = GtkBox::builder()
         .orientation(Orientation::Vertical)
         .spacing(2)
+        .css_classes([theme_class])
         .build();
+ 
+    let appwindow = GtkBox::builder()
+        .orientation(Orientation::Horizontal)
+        .spacing(0)
+        .css_classes(["ghost-win", theme_class])
+        .width_request(100)
+        .height_request(200)
+        .overflow(gtk4::Overflow::Hidden)
+        .build();
+ 
+    let appside = GtkBox::builder()
+        .orientation(Orientation::Vertical)
+        .spacing(4)
+        .css_classes(["ghost-sidebar", theme_class])
+        .halign(Align::Fill)
+        .valign(Align::Fill)
+        .width_request(28)
+        .build();
+ 
+    for _ in 0..4 {
+        let item = GtkBox::builder()
+            .css_classes(["ghost-sidebar-item", theme_class])
+            .height_request(6)
+            .margin_start(4)
+            .margin_end(4)
+            .build();
+        appside.append(&item);
+    }
+ 
+    let appmain = GtkBox::builder()
+        .orientation(Orientation::Vertical)
+        .spacing(3)
+        .hexpand(true)
+        .css_classes(["ghost-main", theme_class])
+        .build();
+ 
+    let apptitlebar = GtkBox::builder()
+        .orientation(Orientation::Horizontal)
+        .spacing(3)
+        .halign(Align::Start)
+        .css_classes(["ghost-titlebar", theme_class])
+        .height_request(10)
+        .margin_start(4)
+        .margin_top(3)
+        .build();
+ 
+    for cls in ["ghost-btn-close", "ghost-btn-min", "ghost-btn-max"] {
+        let btn = GtkBox::builder()
+            .css_classes([cls, theme_class])
+            .width_request(4)
+            .height_request(4)
+            .valign(Align::Center)
+            .build();
+        apptitlebar.append(&btn);
+    }
+    appmain.append(&apptitlebar);
+ 
+    for i in 0..5 {
+        let line = GtkBox::builder()
+            .css_classes(["ghost-content-line", theme_class])
+            .height_request(4)
+            .margin_start(6)
+            .margin_end(if i % 2 == 0 { 10 } else { 20 })
+            .margin_top(2)
+            .build();
+        appmain.append(&line);
+    }
+    
 
+    appwindow.append(&appmain);
+    appwindow.append(&appside);
+    ghost.append(&appwindow);
+ 
     ghost
 }
-
 
 pub fn build_appearance_page(window: &ApplicationWindow) -> ScrolledWindow {
     let content = GtkBox::new(Orientation::Vertical, 16);
@@ -312,7 +385,6 @@ pub fn build_appearance_page(window: &ApplicationWindow) -> ScrolledWindow {
     card.append(&subtitle);
 
     content.append(&card);
-
 
     let wallframe = Frame::new(None);
 
@@ -615,11 +687,69 @@ pub fn build_appearance_page(window: &ApplicationWindow) -> ScrolledWindow {
     themesubtitle.set_margin_end(20);
     themesubtitle.set_halign(Align::Start);
 
-    let themetogglecontainter = GtkBox::new(Orientation::Horizontal, 10);
+    let themetogglecontainter = GtkBox::new(Orientation::Horizontal, 20);
+    themetogglecontainter.set_margin_start(20);
+    themetogglecontainter.set_margin_end(20);
+    themetogglecontainter.set_margin_bottom(20);
+    themetogglecontainter.set_margin_top(20);
 
     let lightthemeghostbtn = build_ghost_for_theme(true);
+    lightthemeghostbtn.set_css_classes(&["ghostBtn"]);
+    let darkthemeghostbtn = build_ghost_for_theme(false);
+    darkthemeghostbtn.set_css_classes(&["ghostBtn"]);
+
+    lightthemeghostbtn.set_cursor_from_name(Some("pointer"));
+    darkthemeghostbtn.set_cursor_from_name(Some("pointer"));
+
+    let current_scheme = std::process::Command::new("gsettings")
+        .args(["get", "org.gnome.desktop.interface", "color-scheme"])
+        .output()
+        .ok()
+        .and_then(|o| String::from_utf8(o.stdout).ok())
+        .unwrap_or_default();
+
+    if current_scheme.contains("prefer-dark") {
+        darkthemeghostbtn.add_css_class("ghostselected");
+    } else {
+        lightthemeghostbtn.add_css_class("ghostselected");
+    }
+
+    fn set_color_scheme(dark: bool) {
+        let value = if dark { "prefer-dark" } else { "prefer-light" };
+        if let Err(e) = std::process::Command::new("gsettings")
+            .args(["set", "org.gnome.desktop.interface", "color-scheme", value])
+            .spawn()
+        {
+            eprintln!("[calibrate] failed to run gsettings: {e}");
+        }
+    }
+
+    let light_click = gtk4::GestureClick::new();
+    {
+        let light = lightthemeghostbtn.clone();
+        let dark = darkthemeghostbtn.clone();
+        light_click.connect_released(move |_, _, _, _| {
+            light.add_css_class("ghostselected");
+            dark.remove_css_class("ghostselected");
+            set_color_scheme(false);
+        });
+    }
+    lightthemeghostbtn.add_controller(light_click);
+
+    let dark_click = gtk4::GestureClick::new();
+    {
+        let light = lightthemeghostbtn.clone();
+        let dark = darkthemeghostbtn.clone();
+        dark_click.connect_released(move |_, _, _, _| {
+            dark.add_css_class("ghostselected");
+            light.remove_css_class("ghostselected");
+            set_color_scheme(true);
+        });
+    }
+    darkthemeghostbtn.add_controller(dark_click);
 
     themetogglecontainter.append(&lightthemeghostbtn);
+    themetogglecontainter.append(&darkthemeghostbtn);
     
     themebox.append(&themetitle);
     themebox.append(&themesubtitle);
