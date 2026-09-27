@@ -2,13 +2,14 @@ use gtk4::prelude::*;
 use gtk4::{
     ApplicationWindow, Box as GtkBox, Label,
     Orientation, ScrolledWindow, Stack, Frame, Align, DrawingArea, gdk_pixbuf::Pixbuf,
-    Button, Dialog, DropTarget, StackSwitcher, gio, gdk, glib,
+    Button, Dialog, DropTarget, StackSwitcher, DropDown, gio, gdk, glib,
 };
 use std::fs;
 use std::{rc::Rc, path::PathBuf};
 
 use niri_ipc::{Request, Response, socket::Socket};
 use infoprober::{parse, Entry, Value};
+use xcursor::{CursorTheme, parser::parse_xcursor};
 
 use gtk4:: gdk_pixbuf::{InterpType};
 use std::cell::RefCell;
@@ -16,6 +17,7 @@ use std::cell::RefCell;
 use crate::home::{rounded_rect, page_scroller};
 
 const CFGPATH: &str = "/var/lib/cynager/info.probe";
+const NIRI_CFGPATH: &str = "/var/lib/cynager/niri/config.kdl";
 
 fn get_monitors() -> Vec<(String, String)> {
     let mut socket = Socket::connect().expect("[calibrate] cannot connect to niri socket");
@@ -271,6 +273,178 @@ fn switch_wall(monitor: &str, path: &str) {
     }
 
     println!("[calibrate] {monitor} -> {rel}");
+}
+
+fn get_cursor_themes() -> Vec<String> {
+    let mut themes = std::collections::BTreeSet::new();
+    let home = std::env::var("HOME").unwrap_or_default();
+
+    let dirs = [
+        format!("{home}/.icons"),
+        format!("{home}/.local/share/icons"),
+        "/usr/share/icons".to_string(),
+        "/usr/local/share/icons".to_string(),
+    ];
+
+    for dir in dirs {
+        let Ok(entries) = fs::read_dir(&dir) else { continue };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_dir() && path.join("cursors").is_dir() {
+                if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
+                    themes.insert(name.to_string());
+                }
+            }
+        }
+    }
+
+    if themes.is_empty() {
+        themes.insert("Adwaita".to_string());
+    }
+
+    themes.into_iter().collect()
+}
+
+fn get_current_cursor_theme() -> String {
+    std::process::Command::new("gsettings")
+        .args(["get", "org.gnome.desktop.interface", "cursor-theme"])
+        .output()
+        .ok()
+        .and_then(|o| String::from_utf8(o.stdout).ok())
+        .map(|s| s.trim().trim_matches('\'').to_string())
+        .unwrap_or_else(|| "Adwaita".to_string())
+}
+
+fn set_cursor_theme(name: &str) {
+    if let Err(e) = std::process::Command::new("gsettings")
+        .args(["set", "org.gnome.desktop.interface", "cursor-theme", name])
+        .spawn()
+    {
+        eprintln!("[calibrate] failed to set cursor theme: {e}");
+    }
+}
+
+fn get_current_cursor_size() -> u32 {
+    std::process::Command::new("gsettings")
+        .args(["get", "org.gnome.desktop.interface", "cursor-size"])
+        .output()
+        .ok()
+        .and_then(|o| String::from_utf8(o.stdout).ok())
+        .and_then(|s| s.trim().parse::<u32>().ok())
+        .unwrap_or(24)
+}
+
+fn set_cursor_size(size: u32) {
+    if let Err(e) = std::process::Command::new("gsettings")
+        .args(["set", "org.gnome.desktop.interface", "cursor-size", &size.to_string()])
+        .spawn()
+    {
+        eprintln!("[calibrate] failed to set cursor size: {e}");
+    }
+}
+
+fn save_niri_cursor_config(theme: &str, size: u32) {
+    let src = fs::read_to_string(NIRI_CFGPATH).unwrap_or_default();
+
+    let new_block = format!(
+        "cursor {{\n    hide-when-typing\n    xcursor-theme \"{theme}\"\n    xcursor-size {size}\n}}"
+    );
+
+    let updated = if let Some(start) = src.find("cursor {") {
+        match src[start..].find('}') {
+            Some(rel_end) => {
+                let end = start + rel_end + 1;
+                format!("{}{}{}", &src[..start], new_block, &src[end..])
+            }
+            None => {
+                eprintln!("[calibrate] malformed `cursor` block in niri config, appending instead");
+                format!("{src}\n\n{new_block}\n")
+            }
+        }
+    } else {
+        let sep = if src.trim().is_empty() { "" } else { "\n\n" };
+        format!("{src}{sep}{new_block}\n")
+    };
+
+    if let Some(parent) = std::path::Path::new(NIRI_CFGPATH).parent() {
+        if let Err(e) = fs::create_dir_all(parent) {
+            eprintln!("[calibrate] failed to create niri config dir: {e}");
+            return;
+        }
+    }
+
+    match fs::write(NIRI_CFGPATH, updated) {
+        Ok(()) => println!("[calibrate] saved cursor config -> theme={theme} size={size}"),
+        Err(e) => eprintln!("[calibrate] failed to write niri config: {e}"),
+    }
+}
+
+fn load_cursor_pixbuf(theme_name: &str, size: u32) -> Option<Pixbuf> {
+    let theme = CursorTheme::load(theme_name);
+    let icon_path = theme
+        .load_icon("left_ptr")
+        .or_else(|| theme.load_icon("default"))?;
+ 
+    let data = fs::read(&icon_path).ok()?;
+    let images = parse_xcursor(&data)?;
+ 
+    let image = images
+        .into_iter()
+        .max_by_key(|img| (img.size as i64 - size as i64).abs())?;
+ 
+    let width = image.width as i32;
+    let height = image.height as i32;
+    if width <= 0 || height <= 0 {
+        return None;
+    }
+ 
+    let rowstride = width * 4;
+    let bytes = glib::Bytes::from_owned(image.pixels_rgba);
+    let pixbuf = Pixbuf::from_bytes(
+        &bytes,
+        gtk4::gdk_pixbuf::Colorspace::Rgb,
+        true,
+        8,
+        width,
+        height,
+        rowstride,
+    );
+ 
+    let target = size as i32;
+    if width == target && height == target {
+        Some(pixbuf)
+    } else {
+        pixbuf.scale_simple(target, target, InterpType::Bilinear)
+    }
+}
+
+fn apply_cursor_preview(image: &gtk4::Image, theme: &str, size: u32) {
+    image.set_pixel_size(size as i32);
+    match load_cursor_pixbuf(theme, size) {
+        Some(pixbuf) => image.set_from_pixbuf(Some(&pixbuf)),
+        None => image.set_icon_name(Some("input-mouse-symbolic")),
+    }
+}
+
+fn build_setting_row(label_text: &str) -> (GtkBox, GtkBox) {
+    let row = GtkBox::new(Orientation::Horizontal, 20);
+    row.set_hexpand(true);
+    row.set_margin_start(20);
+    row.set_margin_end(20);
+
+    let label = Label::new(Some(label_text));
+    label.add_css_class("frame-subtitle");
+    label.set_halign(Align::Start);
+    label.set_hexpand(true);
+
+    let control_box = GtkBox::new(Orientation::Horizontal, 0);
+    control_box.set_halign(Align::End);
+    control_box.set_valign(Align::Center);
+
+    row.append(&label);
+    row.append(&control_box);
+
+    (row, control_box)
 }
 
 fn build_ghost_for_theme(light: bool) -> GtkBox {
@@ -757,7 +931,148 @@ pub fn build_appearance_page(window: &ApplicationWindow) -> ScrolledWindow {
 
     themeframe.set_child(Some(&themebox));
 
+    let cursorframe = Frame::new(None);
+
+    let cursorbox = GtkBox::new(Orientation::Vertical, 5);
+    let cursortitle = Label::new(Some("Cursor"));
+    cursortitle.add_css_class("frame-title");
+    cursortitle.set_margin_start(20);
+    cursortitle.set_margin_top(20);
+    cursortitle.set_margin_end(10);
+    cursortitle.set_halign(Align::Start);
+
+    let cursorsubtitle = Label::new(Some("Change the cursor theme and size for GTK based applications."));
+    cursorsubtitle.add_css_class("frame-subtitle");
+    cursorsubtitle.set_margin_start(20);
+    cursorsubtitle.set_margin_end(20);
+    cursorsubtitle.set_halign(Align::Start);
+    cursorsubtitle.set_margin_bottom(10);
+
+    cursorbox.append(&cursortitle);
+    cursorbox.append(&cursorsubtitle);
+
+    let cursorrow = GtkBox::new(Orientation::Horizontal, 20);
+    cursorrow.set_hexpand(true);
+    cursorrow.set_margin_start(20);
+    cursorrow.set_margin_end(20);
+    cursorrow.set_margin_bottom(20);
+
+    let cursor_themes = get_cursor_themes();
+    let current_cursor_theme = get_current_cursor_theme();
+
+    let sizes: [u32; 6] = [16, 24, 32, 48, 64, 96];
+    let current_cursor_size = get_current_cursor_size();
+
+    let cursor_display = GtkBox::new(Orientation::Vertical, 10);
+    // cursor_display.add_css_class("wallpaperPrev");
+    cursor_display.set_halign(Align::Start);
+    cursor_display.set_valign(Align::Center);
+    cursor_display.set_size_request(160, 160);
+    cursor_display.set_hexpand(false);
+    cursor_display.set_vexpand(false);
+
+    let cursor_icon = gtk4::Image::new();
+    cursor_icon.set_halign(Align::Center);
+    cursor_icon.set_valign(Align::Center);
+    cursor_icon.set_vexpand(true);
+    apply_cursor_preview(&cursor_icon, &current_cursor_theme, current_cursor_size);
+
+    cursor_display.append(&cursor_icon);
+
+    let cursor_controls = GtkBox::new(Orientation::Vertical, 12);
+    cursor_controls.set_hexpand(true);
+    cursor_controls.set_valign(Align::Center);
+
+    let theme_strs: Vec<&str> = cursor_themes.iter().map(String::as_str).collect();
+    let theme_dropdown = DropDown::from_strings(&theme_strs);
+    theme_dropdown.set_valign(Align::Center);
+
+    let theme_idx = cursor_themes
+        .iter()
+        .position(|t| t == &current_cursor_theme)
+        .unwrap_or(0);
+    theme_dropdown.set_selected(theme_idx as u32);
+
+    let size_strs_owned: Vec<String> = sizes.iter().map(|s| s.to_string()).collect();
+    let size_strs: Vec<&str> = size_strs_owned.iter().map(String::as_str).collect();
+    let size_dropdown = DropDown::from_strings(&size_strs);
+    size_dropdown.set_valign(Align::Center);
+
+    let size_idx = sizes.iter().position(|s| *s == current_cursor_size).unwrap_or(1);
+    size_dropdown.set_selected(size_idx as u32);
+
+    theme_dropdown.connect_selected_notify({
+        let cursor_themes = cursor_themes.clone();
+        let cursor_icon = cursor_icon.clone();
+        let size_dropdown = size_dropdown.clone();
+        move |dd| {
+            let idx = dd.selected() as usize;
+            if let Some(name) = cursor_themes.get(idx) {
+                let size_idx = size_dropdown.selected() as usize;
+                let size = sizes.get(size_idx).copied().unwrap_or(24);
+                apply_cursor_preview(&cursor_icon, name, size);
+            }
+        }
+    });
+
+    let (cursor_theme_row, cursor_theme_control) = build_setting_row("Cursor Theme");
+    cursor_theme_control.append(&theme_dropdown);
+
+    size_dropdown.connect_selected_notify({
+        let cursor_themes = cursor_themes.clone();
+        let cursor_icon = cursor_icon.clone();
+        let theme_dropdown = theme_dropdown.clone();
+        move |dd| {
+            let idx = dd.selected() as usize;
+            if let Some(size) = sizes.get(idx) {
+                let theme_idx = theme_dropdown.selected() as usize;
+                if let Some(name) = cursor_themes.get(theme_idx) {
+                    apply_cursor_preview(&cursor_icon, name, *size);
+                }
+            }
+        }
+    });
+
+    let (cursor_size_row, cursor_size_control) = build_setting_row("Cursor Size");
+    cursor_size_control.append(&size_dropdown);
+
+    let cursor_save_btn = Button::new();
+    let cursor_save_label = Label::new(Some("Save"));
+    cursor_save_btn.set_child(Some(&cursor_save_label));
+    cursor_save_btn.add_css_class("sub-btn");
+    cursor_save_btn.set_halign(Align::End);
+    cursor_save_btn.set_cursor_from_name(Some("pointer"));
+
+    cursor_save_btn.connect_clicked({
+        let theme_dropdown = theme_dropdown.clone();
+        let size_dropdown = size_dropdown.clone();
+        let cursor_themes = cursor_themes.clone();
+        move |_| {
+            let theme_idx = theme_dropdown.selected() as usize;
+            let size_idx = size_dropdown.selected() as usize;
+
+            let Some(theme) = cursor_themes.get(theme_idx) else { return };
+            let Some(size) = sizes.get(size_idx) else { return };
+
+            set_cursor_theme(theme);
+            set_cursor_size(*size);
+            save_niri_cursor_config(theme, *size);
+        }
+    });
+
+    cursor_controls.append(&cursor_theme_row);
+    cursor_controls.append(&cursor_size_row);
+    cursor_controls.append(&cursor_save_btn);
+
+    cursorrow.append(&cursor_display);
+    cursorrow.append(&cursor_controls);
+
+    cursorbox.append(&cursorrow);
+
+    cursorframe.set_child(Some(&cursorbox));
+
     content.append(&wallframe);
     content.append(&themeframe);
+    content.append(&cursorframe);
     page_scroller(&content)
 }
