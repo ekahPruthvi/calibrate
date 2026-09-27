@@ -17,7 +17,7 @@ fn format_bytes(bytes: u64) -> String {
     return format!("{:.1} {}", size, UNITS[unit_idx])
 }
 
-fn rounded_rect(cr: &gtk4::cairo::Context, x: f64, y: f64, w: f64, h: f64, r: f64) {
+pub fn rounded_rect(cr: &gtk4::cairo::Context, x: f64, y: f64, w: f64, h: f64, r: f64) {
     let r = r.min(w / 2.0).min(h / 2.0).max(0.0);
     cr.new_sub_path();
     cr.arc(x + w - r, y + r, r, -std::f64::consts::FRAC_PI_2, 0.0);
@@ -563,7 +563,7 @@ pub fn build_home_page() -> ScrolledWindow {
     page_scroller(&content)
 }
 
-fn page_scroller(content: &GtkBox) -> ScrolledWindow {
+pub fn page_scroller(content: &GtkBox) -> ScrolledWindow {
     content.add_css_class("settings-page");
     ScrolledWindow::builder()
         .vscrollbar_policy(gtk4::PolicyType::Always)
