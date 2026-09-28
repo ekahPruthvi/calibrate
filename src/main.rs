@@ -410,8 +410,7 @@ fn load_css() {
                 0 32px 16px #00000010;
             color: black;
             transition:
-                transform var(--duration) var(--timing-function),
-                filter var(--duration) var(--timing-function);
+                all 200ms cubic-bezier(0.4, 0, 0.2, 1);
         }
 
         .destructive-action:hover {
@@ -544,6 +543,58 @@ fn load_css() {
 
         .ghost-content-line.ghost-dark {
             background-color: alpha(white, 0.12);
+        }
+
+        dropdown {
+            all: unset;
+            min-width: 160px;
+        }
+
+        dropdown > button.toggle {
+            all: unset;
+            min-width: 160px;
+            border-radius: 15px;
+            padding: 10px;
+            border: 1px solid #f9f6f61d;
+            background-color: transparent;
+            color: white;
+            transition:
+                all 200ms cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        .dropdown > button.toggle:hover:active {
+            color: white;
+        }
+
+        dropdown > button.toggle:hover {
+            background-color: #f9f6f61d;
+        }
+
+        dropdown popover,
+        dropdown popover contents {
+            all: unset;
+            background-color: transparent;
+            background-image: none;
+            box-shadow: none;
+        }
+
+        dropdown > popover.menu {
+            all: unset;
+            padding: 5px;
+            background-color: #0000003f;
+            border: 1px solid #f9f6f61d;
+            border-radius: 22px;
+            transition: all 0.5s ease;
+        }
+
+        dropdown > popover.menu listview row {
+            all: unset;
+            padding: 8px 12px;
+        }
+
+        dropdown > popover.menu listview row:selected {
+            background-color: #f7f7f82d;
+            border-radius: 15px;
         }
 
         "#,

@@ -964,7 +964,7 @@ pub fn build_appearance_page(window: &ApplicationWindow) -> ScrolledWindow {
     let current_cursor_size = get_current_cursor_size();
 
     let cursor_display = GtkBox::new(Orientation::Vertical, 10);
-    // cursor_display.add_css_class("wallpaperPrev");
+    cursor_display.add_css_class("drop-zone");
     cursor_display.set_halign(Align::Start);
     cursor_display.set_valign(Align::Center);
     cursor_display.set_size_request(160, 160);
@@ -992,11 +992,13 @@ pub fn build_appearance_page(window: &ApplicationWindow) -> ScrolledWindow {
         .position(|t| t == &current_cursor_theme)
         .unwrap_or(0);
     theme_dropdown.set_selected(theme_idx as u32);
+    theme_dropdown.remove_css_class("background");
 
     let size_strs_owned: Vec<String> = sizes.iter().map(|s| s.to_string()).collect();
     let size_strs: Vec<&str> = size_strs_owned.iter().map(String::as_str).collect();
     let size_dropdown = DropDown::from_strings(&size_strs);
     size_dropdown.set_valign(Align::Center);
+    size_dropdown.remove_css_class("background");
 
     let size_idx = sizes.iter().position(|s| *s == current_cursor_size).unwrap_or(1);
     size_dropdown.set_selected(size_idx as u32);
@@ -1041,6 +1043,7 @@ pub fn build_appearance_page(window: &ApplicationWindow) -> ScrolledWindow {
     cursor_save_btn.set_child(Some(&cursor_save_label));
     cursor_save_btn.add_css_class("sub-btn");
     cursor_save_btn.set_halign(Align::End);
+    cursor_save_btn.set_margin_end(20);
     cursor_save_btn.set_cursor_from_name(Some("pointer"));
 
     cursor_save_btn.connect_clicked({
