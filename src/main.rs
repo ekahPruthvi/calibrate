@@ -449,6 +449,20 @@ fn load_css() {
             font-size: 48px;
         }
 
+        .ghost-widget { background: alpha(currentColor, 0.08); border: 1px solid alpha(currentColor, 0.15); border-radius: 16px; padding: 10px; }
+        .ghost-widget-off { filter: grayscale(1); opacity: 0.35; }
+        .ghost-label-off { opacity: 0.5; }
+        .ghost-block { background: alpha(currentColor, 0.25); border-radius: 4px; }
+        .ghost-accent { background: @accent_bg_color; border-radius: 4px; }
+        .ghost-app { border-radius: 7px; }
+        .ghost-battery-body { border: 2px solid alpha(currentColor, 0.4); border-radius: 8px; }
+        .ghost-battery-fill { background: #3fb950; border-radius: 4px; }
+        .ghost-battery-nub { border-radius: 2px; }
+        .ghost-git-0 { background: alpha(currentColor, 0.1); }
+        .ghost-git-1 { background: #0e4429; }
+        .ghost-git-2 { background: #26a641; }
+        .ghost-git-3 { background: #39d353; }
+
         .popoverd {
             padding: 2px;
             border: 2px solid transparent;

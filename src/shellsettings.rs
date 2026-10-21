@@ -1,9 +1,10 @@
 use gtk4::prelude::*;
 use gtk4::{
-    Align, Box as GtkBox, Button, Frame, Label, Orientation, Overlay, Revealer,
-    RevealerTransitionType, ScrolledWindow, glib,
+    Align, Box as GtkBox, Button, Dialog, DropTarget, Entry, Frame, Grid, Image, Label, Orientation,
+    Overlay, PolicyType, ProgressBar, Revealer, RevealerTransitionType, ScrolledWindow, gdk, gio, glib,
 };
 use std::cell::RefCell;
+use std::collections::HashMap;
 use std::fs;
 use std::os::unix::process::CommandExt;
 use std::process::{Command, Stdio};
@@ -19,30 +20,60 @@ const CFGPATH: &str = "/var/lib/cynager/info.probe";
 
 const CAPSULE_BIN: &str = "capsule";
 
-fn read_shellout() -> Option<String> {
+// ---------------------------------------------------------------------------
+// config helpers
+// ---------------------------------------------------------------------------
+
+fn read_set_str(key: &str) -> Option<String> {
     let src = fs::read_to_string(CFGPATH).ok()?;
     let doc = parse(&src).ok()?;
-    doc.get("set", "shellout")
+    doc.get("set", key)
         .and_then(|v| v.as_str())
         .map(|s| s.to_string())
 }
 
-fn write_shellout(monitor: &str) -> Result<(), String> {
+fn write_set_str(key: &str, val: &str) -> Result<(), String> {
     let src = fs::read_to_string(CFGPATH).map_err(|e| format!("failed to read cfg: {e}"))?;
     let mut doc = parse(&src).map_err(|e| format!("failed to parse cfg: {e}"))?;
 
     let set = doc.section_or_insert("set");
-    match set.get_mut("shellout") {
-        Some(v) => *v = Value::from(monitor.to_string()),
-        None => set.push("shellout", monitor.to_string()),
+    match set.get_mut(key) {
+        Some(v) => *v = Value::from(val.to_string()),
+        None => set.push(key, val.to_string()),
     }
 
     doc.validate().map_err(|e| format!("not writing cfg: {e}"))?;
     fs::write(CFGPATH, doc.render()).map_err(|e| format!("failed to write cfg: {e}"))?;
 
-    println!("[calibrate] shellout -> {monitor}");
+    println!("[calibrate] {key} updated");
     Ok(())
 }
+
+fn read_shellout() -> Option<String> {
+    read_set_str("shellout")
+}
+
+fn write_shellout(monitor: &str) -> Result<(), String> {
+    write_set_str("shellout", monitor)
+}
+
+/// `widgets :{ cal :true ... }` -> { "cal": true, ... }
+fn read_widget_states() -> HashMap<String, bool> {
+    let mut out = HashMap::new();
+    let Ok(src) = fs::read_to_string(CFGPATH) else { return out };
+    let Ok(doc) = parse(&src) else { return out };
+
+    if let Some(map) = doc.get("set", "widgets").and_then(|v| v.as_map()) {
+        for e in map.iter() {
+            out.insert(e.key.to_string(), e.value.as_str() == Some("true"));
+        }
+    }
+    out
+}
+
+// ---------------------------------------------------------------------------
+// capsule process
+// ---------------------------------------------------------------------------
 
 fn restart_capsule() {
     std::thread::spawn(|| {
@@ -73,6 +104,10 @@ fn capsule_running() -> bool {
         .map(|s| s.success())
         .unwrap_or(false)
 }
+
+// ---------------------------------------------------------------------------
+// toast
+// ---------------------------------------------------------------------------
 
 #[derive(Clone)]
 struct Toast {
@@ -120,6 +155,9 @@ impl Toast {
     }
 }
 
+// ---------------------------------------------------------------------------
+// monitors + status bar
+// ---------------------------------------------------------------------------
 
 fn build_monitor_button(name: &str, make: &str) -> Button {
     let name_lbl = Label::new(Some(name));
@@ -148,7 +186,6 @@ fn mark_selected(buttons: &[(String, Button)], selected: &str) {
 }
 
 fn build_status_bar(toast: &Toast) -> GtkBox {
-
     let dead_lbl = Label::new(Some("Capsule shell is dead :("));
     dead_lbl.set_halign(Align::Start);
     dead_lbl.set_margin_start(10);
@@ -164,8 +201,8 @@ fn build_status_bar(toast: &Toast) -> GtkBox {
     dead_bar.append(&dead_lbl);
     dead_bar.append(&restart_btn);
 
-    let update = |stack: &GtkBox| {
-        stack.set_visible(!capsule_running());
+    let update = |bar: &GtkBox| {
+        bar.set_visible(!capsule_running());
     };
     update(&dead_bar);
 
@@ -179,8 +216,8 @@ fn build_status_bar(toast: &Toast) -> GtkBox {
 
     let weak = dead_bar.downgrade();
     glib::timeout_add_local(Duration::from_secs(2), move || match weak.upgrade() {
-        Some(stack) => {
-            update(&stack);
+        Some(bar) => {
+            update(&bar);
             glib::ControlFlow::Continue
         }
         None => glib::ControlFlow::Break,
@@ -188,6 +225,487 @@ fn build_status_bar(toast: &Toast) -> GtkBox {
 
     dead_bar
 }
+
+// ---------------------------------------------------------------------------
+// ghost widgets
+// ---------------------------------------------------------------------------
+
+fn ghost_block(w: i32, h: i32, extra: &str) -> GtkBox {
+    GtkBox::builder()
+        .css_classes(["ghost-block", extra])
+        .width_request(w)
+        .height_request(h)
+        .build()
+}
+
+fn ghost_shell(kind: &str, enabled: bool) -> GtkBox {
+    let g = GtkBox::builder()
+        .orientation(Orientation::Vertical)
+        .spacing(6)
+        .css_classes(["ghost-widget", kind])
+        .halign(Align::Center)
+        .width_request(120)
+        .height_request(120)
+        .overflow(gtk4::Overflow::Hidden)
+        .build();
+    if !enabled {
+        g.add_css_class("ghost-widget-off");
+    }
+    g
+}
+
+fn ghost_calendar(enabled: bool) -> GtkBox {
+    let g = ghost_shell("ghost-cal", enabled);
+    g.append(&ghost_block(60, 8, "ghost-line"));
+
+    let grid = Grid::new();
+    grid.set_row_spacing(4);
+    grid.set_column_spacing(4);
+    grid.set_halign(Align::Center);
+    for r in 0..5 {
+        for c in 0..7 {
+            let cls = if r == 2 && c == 3 { "ghost-accent" } else { "ghost-dot" };
+            grid.attach(&ghost_block(9, 9, cls), c, r, 1, 1);
+        }
+    }
+    g.append(&grid);
+    g
+}
+
+fn ghost_system(enabled: bool) -> GtkBox {
+    let g = ghost_shell("ghost-sys", enabled);
+    g.set_valign(Align::Center);
+    for frac in [0.35, 0.6, 0.8] {
+        let bar = ProgressBar::new();
+        bar.set_fraction(frac);
+        bar.add_css_class("ghost-progress");
+        bar.set_margin_start(4);
+        bar.set_margin_end(4);
+        bar.set_vexpand(true);
+        bar.set_valign(Align::Center);
+        g.append(&bar);
+    }
+    g
+}
+
+fn ghost_battery(enabled: bool) -> GtkBox {
+    let g = ghost_shell("ghost-bat", enabled);
+    g.set_valign(Align::Center);
+
+    let row = GtkBox::new(Orientation::Horizontal, 2);
+    row.set_halign(Align::Center);
+    row.set_vexpand(true);
+    row.set_valign(Align::Center);
+
+    let body = GtkBox::builder()
+        .css_classes(["ghost-battery-body"])
+        .width_request(70)
+        .height_request(34)
+        .build();
+    let fill = ghost_block(46, -1, "ghost-battery-fill");
+    fill.set_margin_top(4);
+    fill.set_margin_bottom(4);
+    fill.set_margin_start(4);
+    fill.set_halign(Align::Start);
+    fill.set_hexpand(false);
+    body.append(&fill);
+
+    let nub = ghost_block(5, 14, "ghost-battery-nub");
+    nub.set_valign(Align::Center);
+
+    row.append(&body);
+    row.append(&nub);
+    g.append(&row);
+    g
+}
+
+fn ghost_app_drawer(enabled: bool) -> GtkBox {
+    let g = ghost_shell("ghost-appd", enabled);
+    let grid = Grid::new();
+    grid.set_row_spacing(6);
+    grid.set_column_spacing(6);
+    grid.set_halign(Align::Center);
+    grid.set_valign(Align::Center);
+    grid.set_vexpand(true);
+    for r in 0..3 {
+        for c in 0..3 {
+            grid.attach(&ghost_block(24, 24, "ghost-app"), c, r, 1, 1);
+        }
+    }
+    g.append(&grid);
+    g
+}
+
+fn ghost_git(enabled: bool) -> GtkBox {
+    let g = ghost_shell("ghost-git", enabled);
+    let grid = Grid::new();
+    grid.set_row_spacing(3);
+    grid.set_column_spacing(3);
+    grid.set_halign(Align::Center);
+    grid.set_valign(Align::Center);
+    grid.set_vexpand(true);
+    for r in 0..5 {
+        for c in 0..9 {
+            let level = (r * 7 + c * 3 + r * c) % 4;
+            grid.attach(&ghost_block(9, 9, &format!("ghost-git-{level}")), c, r, 1, 1);
+        }
+    }
+    g.append(&grid);
+    g
+}
+
+fn set_sticker_image(img: &Image, path: &str) {
+    if !path.is_empty() && std::path::Path::new(path).is_file() {
+        img.set_from_file(Some(path));
+    } else {
+        img.set_icon_name(Some("image-x-generic-symbolic"));
+    }
+}
+
+fn ghost_sticker(enabled: bool, path: &str) -> (GtkBox, Image) {
+    let g = ghost_shell("ghost-stick", enabled);
+
+    let img = Image::new();
+    img.set_pixel_size(80);
+    img.set_halign(Align::Center);
+    img.set_valign(Align::Center);
+    img.set_vexpand(true);
+    set_sticker_image(&img, path);
+
+    g.append(&img);
+    (g, img)
+}
+
+fn open_setting_dialog(
+    anchor: &impl IsA<gtk4::Widget>,
+    title: &str,
+    hint: &str,
+    key: &'static str,
+    initial: &str,
+    secret: bool,
+    toast: &Toast,
+    on_saved: impl Fn(&str) + 'static,
+) {
+    let mut builder = Dialog::builder().modal(true).title(title);
+    if let Some(win) = anchor.root().and_then(|r| r.downcast::<gtk4::Window>().ok()) {
+        builder = builder.transient_for(&win);
+    }
+    let dialog = builder.build();
+    dialog.add_button("Cancel", gtk4::ResponseType::Cancel);
+    dialog.add_button("Save", gtk4::ResponseType::Accept);
+
+    let outer = GtkBox::new(Orientation::Vertical, 8);
+    outer.set_margin_top(16);
+    outer.set_margin_bottom(16);
+    outer.set_margin_start(16);
+    outer.set_margin_end(16);
+
+    let heading = Label::new(Some(title));
+    heading.add_css_class("title");
+    outer.append(&heading);
+
+    let hint_lbl = Label::new(Some(hint));
+    hint_lbl.add_css_class("dim-label");
+    hint_lbl.set_halign(Align::Start);
+    outer.append(&hint_lbl);
+
+    let entry = Entry::new();
+    entry.set_width_chars(40);
+    entry.set_activates_default(true);
+    if secret {
+        entry.set_visibility(false);
+        entry.set_placeholder_text(Some("Paste new token"));
+    } else {
+        entry.set_text(initial);
+    }
+    outer.append(&entry);
+
+    dialog.content_area().append(&outer);
+    dialog.set_default_response(gtk4::ResponseType::Accept);
+
+    let toast = toast.clone();
+    let title_owned = title.to_string();
+    dialog.connect_response(move |dialog, response| {
+        if response == gtk4::ResponseType::Accept {
+            let val = entry.text().trim().to_string();
+            if !val.is_empty() {
+                match write_set_str(key, &val) {
+                    Ok(()) => {
+                        on_saved(&val);
+                        toast.show(&format!("{title_owned} saved"));
+                    }
+                    Err(e) => {
+                        eprintln!("[calibrate] {e}");
+                        toast.show("Couldn't save setting");
+                    }
+                }
+            }
+        }
+        dialog.close();
+    });
+
+    dialog.present();
+}
+
+const STICKER_EXTS: [&str; 6] = ["png", "jpg", "jpeg", "webp", "bmp", "gif"];
+
+fn install_sticker(src: &std::path::Path) -> Result<String, String> {
+    let ext = src
+        .extension()
+        .and_then(|e| e.to_str())
+        .map(|e| e.to_lowercase())
+        .filter(|e| STICKER_EXTS.contains(&e.as_str()))
+        .ok_or_else(|| "not a supported image".to_string())?;
+
+    let mut dir = glib::home_dir();
+    dir.push(".config");
+    dir.push("sticker");
+    fs::create_dir_all(&dir).map_err(|e| format!("failed to create sticker dir: {e}"))?;
+
+    let dest = dir.join(format!("stick.{ext}"));
+
+    let same = match (fs::canonicalize(src), fs::canonicalize(&dest)) {
+        (Ok(a), Ok(b)) => a == b,
+        _ => false,
+    };
+    if !same {
+        fs::copy(src, &dest).map_err(|e| format!("failed to copy sticker: {e}"))?;
+    }
+
+    for e in STICKER_EXTS {
+        let old = dir.join(format!("stick.{e}"));
+        if old != dest {
+            let _ = fs::remove_file(old);
+        }
+    }
+
+    let dest_str = dest
+        .to_str()
+        .ok_or_else(|| "sticker path is not valid UTF-8".to_string())?
+        .to_string();
+    write_set_str("sticker", &dest_str)?;
+    Ok(dest_str)
+}
+
+fn open_sticker_dialog(anchor: &impl IsA<gtk4::Widget>, toast: &Toast, img: &Image) {
+    let mut builder = Dialog::builder().modal(true).title("Sticker");
+    if let Some(win) = anchor.root().and_then(|r| r.downcast::<gtk4::Window>().ok()) {
+        builder = builder.transient_for(&win);
+    }
+    let dialog = builder.build();
+    dialog.add_button("Cancel", gtk4::ResponseType::Cancel);
+    dialog.connect_response(|d, _| d.close());
+
+    let outer = GtkBox::new(Orientation::Vertical, 8);
+    outer.set_margin_top(16);
+    outer.set_margin_bottom(16);
+    outer.set_margin_start(16);
+    outer.set_margin_end(16);
+
+    let heading = Label::new(Some("Change Sticker"));
+    heading.add_css_class("title");
+    outer.append(&heading);
+
+    let drop_box = GtkBox::new(Orientation::Vertical, 12);
+    drop_box.set_halign(Align::Fill);
+    drop_box.set_valign(Align::Fill);
+    drop_box.set_hexpand(true);
+    drop_box.set_vexpand(true);
+    drop_box.set_size_request(360, 220);
+    drop_box.add_css_class("drop-zone");
+
+    let icon = Image::from_icon_name("image-x-generic-symbolic");
+    icon.set_pixel_size(48);
+    icon.set_vexpand(true);
+    icon.set_valign(Align::End);
+
+    let hint = Label::new(Some("Drag & drop an image here"));
+    hint.add_css_class("dim-label");
+    hint.set_vexpand(true);
+    hint.set_valign(Align::Start);
+
+    drop_box.append(&icon);
+    drop_box.append(&hint);
+
+    let target = DropTarget::new(gio::File::static_type(), gdk::DragAction::COPY);
+
+    {
+        let drop_box = drop_box.clone();
+        target.connect_enter(move |_, _, _| {
+            drop_box.add_css_class("drag-active");
+            gdk::DragAction::COPY
+        });
+    }
+    {
+        let drop_box = drop_box.clone();
+        target.connect_leave(move |_| {
+            drop_box.remove_css_class("drag-active");
+        });
+    }
+    {
+        let drop_box = drop_box.clone();
+        let icon = icon.clone();
+        let hint = hint.clone();
+        let dialog = dialog.clone();
+        let toast = toast.clone();
+        let img = img.clone();
+
+        target.connect_drop(move |_, value, _, _| {
+            let Ok(file) = value.get::<gio::File>() else { return false };
+            let Some(path) = file.path() else { return false };
+
+            match install_sticker(&path) {
+                Ok(dest) => {
+                    set_sticker_image(&img, &dest);
+                    toast.show("Sticker updated");
+
+                    drop_box.remove_css_class("drag-active");
+                    drop_box.add_css_class("success");
+                    drop_box.remove(&icon);
+                    drop_box.remove(&hint);
+
+                    let tick = Label::new(Some("\u{2713}"));
+                    tick.add_css_class("tick");
+                    tick.set_vexpand(true);
+                    tick.set_valign(Align::End);
+                    let done = Label::new(Some("Added"));
+                    done.add_css_class("dim-label");
+                    done.set_vexpand(true);
+                    done.set_valign(Align::Start);
+                    drop_box.append(&tick);
+                    drop_box.append(&done);
+
+                    let dialog = dialog.clone();
+                    glib::timeout_add_local_once(Duration::from_millis(650), move || {
+                        dialog.close();
+                    });
+                    true
+                }
+                Err(e) => {
+                    eprintln!("[calibrate] {e}");
+                    drop_box.remove_css_class("drag-active");
+                    toast.show("Couldn't set sticker (images only)");
+                    false
+                }
+            }
+        });
+    }
+
+    drop_box.add_controller(target);
+    outer.append(&drop_box);
+    dialog.content_area().append(&outer);
+    dialog.present();
+}
+
+fn build_widgets_frame(toast: &Toast) -> Frame {
+    let frame = Frame::new(None);
+    let boxv = GtkBox::new(Orientation::Vertical, 10);
+
+    let title = Label::new(Some("Widgets"));
+    title.add_css_class("frame-title");
+    title.set_halign(Align::Start);
+    title.set_margin_start(20);
+    title.set_margin_top(20);
+    title.set_margin_end(20);
+
+    let subtitle = Label::new(Some("Widgets shown on the Capsule shell. Dimmed ones are turned off."));
+    subtitle.add_css_class("frame-subtitle");
+    subtitle.set_halign(Align::Start);
+    subtitle.set_margin_start(20);
+    subtitle.set_margin_end(20);
+
+    boxv.append(&title);
+    boxv.append(&subtitle);
+
+    let states = read_widget_states();
+    let on = |k: &str| states.get(k).copied().unwrap_or(false);
+    let sticker_path = read_set_str("sticker").unwrap_or_default();
+
+    let scroller = ScrolledWindow::builder()
+        .hscrollbar_policy(PolicyType::Automatic)
+        .vscrollbar_policy(PolicyType::Never)
+        .propagate_natural_height(true)
+        .hexpand(true)
+        .margin_start(10)
+        .margin_end(10)
+        .margin_bottom(10)
+        .build();
+
+    let row = GtkBox::new(Orientation::Horizontal, 16);
+    row.set_margin_top(10);
+    row.set_margin_bottom(10);
+    row.set_margin_start(10);
+    row.set_margin_end(10);
+
+    // (key, display name, ghost, has settings)
+    let (stick_ghost, stick_img) = ghost_sticker(on("stick"), &sticker_path);
+
+    let items: Vec<(&str, &str, GtkBox)> = vec![
+        ("cal", "Calendar", ghost_calendar(on("cal"))),
+        ("sys", "System", ghost_system(on("sys"))),
+        ("bat", "Battery", ghost_battery(on("bat"))),
+        ("stick", "Sticker", stick_ghost),
+        ("appd", "App Drawer", ghost_app_drawer(on("appd"))),
+        ("git", "Git", ghost_git(on("git"))),
+    ];
+
+    for (key, name, ghost) in items {
+        let cell = GtkBox::new(Orientation::Vertical, 6);
+        cell.set_halign(Align::Center);
+        cell.append(&ghost);
+
+        let label_row = GtkBox::new(Orientation::Horizontal, 4);
+        label_row.set_halign(Align::Center);
+
+        let lbl = Label::new(Some(name));
+        lbl.add_css_class("frame-subtitle");
+        if !on(key) {
+            lbl.add_css_class("ghost-label-off");
+        }
+        label_row.append(&lbl);
+
+        if key == "git" || key == "stick" {
+            let gear = Button::new();
+            gear.set_child(Some(&Image::from_icon_name("emblem-system-symbolic")));
+            gear.add_css_class("flat");
+            gear.add_css_class("ghost-gear");
+            gear.set_cursor_from_name(Some("pointer"));
+            gear.set_tooltip_text(Some(&format!("{name} settings")));
+
+            let toast = toast.clone();
+            if key == "git" {
+                gear.connect_clicked(move |b| {
+                    open_setting_dialog(
+                        b,
+                        "Git token",
+                        "Personal access token used by the Git widget.",
+                        "git",
+                        "",
+                        true,
+                        &toast,
+                        |_| {},
+                    );
+                });
+            } else {
+                let img = stick_img.clone();
+                gear.connect_clicked(move |b| open_sticker_dialog(b, &toast, &img));
+            }
+            label_row.append(&gear);
+        }
+
+        cell.append(&label_row);
+        row.append(&cell);
+    }
+
+    scroller.set_child(Some(&row));
+    boxv.append(&scroller);
+    frame.set_child(Some(&boxv));
+    frame
+}
+
+// ---------------------------------------------------------------------------
+// page
+// ---------------------------------------------------------------------------
 
 pub fn build_shell_page() -> Overlay {
     let content = GtkBox::new(Orientation::Vertical, 16);
@@ -283,7 +801,8 @@ pub fn build_shell_page() -> Overlay {
     outframe.set_child(Some(&outbox));
     content.append(&outframe);
 
-    // scroller underneath, toast floating above it
+    content.append(&build_widgets_frame(&toast));
+
     let overlay = Overlay::new();
     let scroller: ScrolledWindow = page_scroller(&content);
     overlay.set_child(Some(&scroller));
