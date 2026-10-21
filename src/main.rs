@@ -21,6 +21,7 @@ const TAB_IDS: &[&str] = &[
 
 mod home;
 mod appearence;
+mod shellsettings;
 
 struct MenuItem {
     id: &'static str,
@@ -385,6 +386,14 @@ fn load_css() {
                 all 200ms cubic-bezier(0.4, 0, 0.2, 1);
         }
 
+        .capsule-dead {
+            background-color: #ffffff13;
+            border-radius: 20px;
+            color: #ffa2a2f4;
+            font-weight: 400;
+            padding: 5px;
+        }
+
         .sub-btn:hover {
             transform: scale(1.03);
         }
@@ -597,6 +606,29 @@ fn load_css() {
             border-radius: 15px;
         }
 
+        .shell-toast { background: rgba(30,30,30,0.92); border-radius: 14px; padding: 10px 18px; }
+        .shell-toast-label { color: white; }
+        .monitor-btn {
+            background-color: #053bff;
+            border: 15px solid #fffbd5;
+            border-radius: 30px;
+            padding: 30px;
+
+                
+            animation: crt-flicker 0.15s infinite;
+        }
+
+        @keyframes crt-flicker {
+            0% { opacity: 0.985; }
+            50% { opacity: 0.995; }
+            100% { opacity: 0.985; }
+        }
+
+        .monitor-btn-label { font-weight: 600; }
+        .monitor-selected { 
+            border: 17px solid black; 
+        }
+
         "#,
     );
     gtk4::style_context_add_provider_for_display(
@@ -675,7 +707,7 @@ fn page_meta(id: &str, username: &str) -> (String, String) {
         ),
         "appearance" => (
             "Appearance".to_string(),
-            "Personalize the look and feel of your desktop.".to_string(),
+            "Change the overall look and theme of the OS.".to_string(),
         ),
         "shellset" => (
             "Shell".to_string(),
@@ -866,55 +898,6 @@ fn build_network_page() -> ScrolledWindow {
     page_scroller(&content)
 }
 
-fn build_shell_page() -> ScrolledWindow {
-    let content = GtkBox::new(Orientation::Vertical, 16);
-    
-    let card = GtkBox::new(Orientation::Vertical, 10);
-    card.add_css_class("shortcut-card");
-    card.add_css_class("detail-card");
-    card.set_margin_top(10);
-    card.set_hexpand(true);
-
-
-    let infoicon = gtk4::Image::from_file("/var/lib/cynager/icons/shell.svg");
-    infoicon.set_pixel_size(54);
-    infoicon.set_halign(Align::Center);
-    infoicon.set_css_classes(&["card-icons"]);
-
-    let title = Label::new(Some("Shell Settings"));
-    title.add_css_class("shortcut-title");
-    title.set_halign(Align::Center);
-
-    let subtitle = Label::new(Some("Control and setup cynageOS the way you want."));
-    subtitle.add_css_class("shortcut-desc");
-    subtitle.set_halign(Align::Center);
-
-    card.append(&infoicon);
-    card.append(&title);
-    card.append(&subtitle);
-
-    content.append(&card);
-
-
-    let outframe = Frame::new(None);
-
-    let outbox = GtkBox::new(Orientation::Vertical, 10);
-    let outtitle = Label::new(Some("Output"));
-    outtitle.add_css_class("frame-title");
-    outtitle.set_halign(Align::Start);
-
-    let wallhead = GtkBox::new(Orientation::Horizontal, 5);
-
-
-    outbox.append(&outtitle);
-    outbox.append(&wallhead);
-
-    outframe.set_child(Some(&outbox));
-
-    content.append(&outframe);
-    page_scroller(&content)
-}
-
 fn build_about_page(username: &str) -> ScrolledWindow {
     let content = GtkBox::new(Orientation::Vertical, 16);
 
@@ -1035,7 +1018,7 @@ fn build_ui(app: &Application, initial_tab: Option<String>) {
     let appearance_page = appearence::build_appearance_page(&window);
     stack.add_titled(&appearance_page, Some("appearance"), "Appearance");
 
-    let shellset_page = build_shell_page();
+    let shellset_page = shellsettings::build_shell_page();
     stack.add_titled(&shellset_page, Some("shellset"), "Shell");
 
     let display_page = build_display_page();

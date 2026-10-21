@@ -19,7 +19,7 @@ use crate::home::{rounded_rect, page_scroller};
 const CFGPATH: &str = "/var/lib/cynager/info.probe";
 const NIRI_CFGPATH: &str = "/var/lib/cynager/niri/config.kdl";
 
-fn get_monitors() -> Vec<(String, String)> {
+pub fn get_monitors() -> Vec<(String, String)> {
     let mut socket = Socket::connect().expect("[calibrate] cannot connect to niri socket");
 
     let reply = socket.send(Request::Outputs).expect("[calibrate] request to niri error");
