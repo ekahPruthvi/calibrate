@@ -449,9 +449,17 @@ fn load_css() {
             font-size: 48px;
         }
 
-        .ghost-widget { background: alpha(currentColor, 0.08); border: 1px solid alpha(currentColor, 0.15); border-radius: 16px; padding: 10px; }
+        .ghost-widget { 
+            background-color: transparent; border: none; border-radius: 16px; padding: 20px; 
+            transform: translateZ(0px) rotateX(5deg) rotateY(0deg);
+            transition: transform .5s;
+            transition: all 400ms cubic-bezier(0.4, 0.0, 0.2, 1);
+        }
+        .ghost-widget:hover {
+            transform: translateZ(5px) rotateX(15deg) rotateY(5deg);
+        }
         .ghost-widget-off { filter: grayscale(1); opacity: 0.35; }
-        .ghost-label-off { opacity: 0.5; }
+        .ghost-label-off { opacity: 0.2; }
         .ghost-block { background: alpha(currentColor, 0.25); border-radius: 4px; }
         .ghost-accent { background: @accent_bg_color; border-radius: 4px; }
         .ghost-app { border-radius: 7px; }
@@ -462,6 +470,193 @@ fn load_css() {
         .ghost-git-1 { background: #0e4429; }
         .ghost-git-2 { background: #26a641; }
         .ghost-git-3 { background: #39d353; }
+
+        .ghost-cal {
+            padding: 10px;
+            background-color: rgba(34, 34, 34, 0.559);
+            border: 2px solid transparent;
+            background-image: linear-gradient(#ceccc7, #ceccc7),
+                                linear-gradient(0deg, #888683, #fbfaf9);
+            background-origin: border-box;
+            background-clip: padding-box, border-box;
+            border-radius: 40px;
+        }
+
+        calendar.view {
+            border: none;
+            border-radius: 25px;
+            background-color: rgba(167, 167, 167, 0.048);
+            padding: 4px;
+        }
+
+        calendar.view > header {
+            background-color: #ffffff48;
+            border-radius: 50px;
+            padding: 2px;
+            box-shadow: rgba(0, 0, 0, 0.24) 0px 3px 8px;
+        }
+
+        calendar.view > header > button {
+            background-color: #ffffff00;
+            border-radius: 100px;
+            border: 1px solid rgba(0, 0, 0, 0.215);
+            color: #333;
+            margin: 6px;
+        }
+
+        calendar.view > header > button:hover {
+            background-color: #ffffff3d;
+        }
+
+        calendar.view > header > label.year {
+            font-weight: bold;
+            color: #000000;
+        }
+
+        calendar.view header stack.month {
+            color: rgb(0, 0, 0);
+            font-size: 16px;
+        }
+
+        calendar.view > grid > label.day-name {
+            font-weight: 600;
+            color: #464242;
+        }
+
+        calendar.view > grid > label.day-name:hover {
+            color: rgb(8, 8, 8);
+        }
+
+        calendar.view > grid > label.week-number {
+            color: #2b2b2b;
+            font-style: italic;
+        }
+
+        calendar.view > grid > label.day-number {
+            color: #2b2b2b;
+            background: transparent;
+        }
+
+        calendar.view > grid > label.day-number:hover {
+            color: #2b2b2b;
+        }
+
+        calendar.view > grid > label.other-month {
+            color: #00000038;
+            opacity: 0.6;
+        }
+
+        calendar.view > grid > label.today {
+            background-color: #f95b00fe;
+            border-radius: 50px;
+            border: none;
+            font-weight: 900;
+            color: #ffffff;
+        }
+
+        calendar.view > grid > label:selected {
+            border-radius: 50px;
+            font-weight: 500;
+            color: #000000;
+        }
+
+        .ghost-vynl {
+            padding: 10px;
+            background-color: rgba(34, 34, 34, 0.559);
+            border: 2px solid transparent;
+            background-image: linear-gradient(#242424, #242424),
+                                linear-gradient(0deg, #101010, #474746);
+            background-origin: border-box;
+            background-clip: padding-box, border-box;
+            border-radius: 100px;
+        }
+
+        tooltip {
+            all:unset;
+            background-color: #242424;
+            border: 1px solid #2828289c;
+            border-radius: 10px;
+            padding: 6px 12px;
+        }
+
+        .ghost-bat {
+            padding: 15px;
+            background-color: rgba(34, 34, 34, 0.559);
+            border: 2px solid transparent;
+            background-image: linear-gradient(rgb(29, 29, 29), rgb(29, 29, 29)),
+                                linear-gradient(0deg, rgb(9, 9, 9), rgba(94, 94, 94, 0.686));
+            background-origin: border-box;
+            background-clip: padding-box, border-box;
+            border-radius: 40px;
+        }
+
+        .ghost-battery-pct{
+            color: white;
+            font-size: 50px;
+            font-weight: 100;
+        }
+
+        .ghost-battery-sym {
+            color: white;
+            font-size: 20px;
+            font-weight: 100;
+        }
+
+        .ghost-sys {
+            padding: 10px 30px 10px 10px;
+            background-color: rgba(34, 34, 34, 0.559);
+            border: 2px solid transparent;
+            background-image: linear-gradient(rgb(129, 129, 129), rgb(129, 129, 129)),
+                                linear-gradient(0deg, rgb(94, 94, 94), rgba(226, 226, 226, 0.686));
+            /* rgb(177, 218, 218) inverse color */
+            background-origin: border-box;
+            background-clip: padding-box, border-box;
+            border-radius: 40px;
+        }
+
+        .ghost-appd {
+            padding: 15px;
+            background-color: rgba(34, 34, 34, 0.559);
+            border: 2px solid transparent;
+            background-image: linear-gradient(rgb(29, 29, 29), rgb(29, 29, 29)),
+                                linear-gradient(0deg, rgb(9, 9, 9), rgba(94, 94, 94, 0.686));
+            background-origin: border-box;
+            background-clip: padding-box, border-box;
+            border-radius: 40px;
+        }
+
+        window.dialog {
+            padding: 10px;
+        }
+
+        .ghost-gear {
+            transition: all 0.5s ease;
+        }
+
+        .ghost-gear:hover {
+            transform: rotate(360deg);
+        }
+
+        .widget-grid {
+            border: 1px solid rgba(255, 255, 255, 0.15);
+            border-radius: 16px;
+        }
+
+        /* shared dividers between cells */
+        .widget-cell-frame {
+            border-right: 1px solid rgba(255, 255, 255, 0.15);
+            border-bottom: 1px solid rgba(255, 255, 255, 0.15);
+        }
+
+        /* the outer border already covers the right and bottom edges */
+        .widget-cell-frame.last-col { border-right: none; }
+        .widget-cell-frame.last-row { border-bottom: none; }
+
+        flowbox flowboxchild {
+            padding: 0;
+            background: none;
+            outline: none;
+        }
 
         .popoverd {
             padding: 2px;
@@ -1015,8 +1210,8 @@ fn build_ui(app: &Application, initial_tab: Option<String>) {
     let window = ApplicationWindow::builder()
         .application(app)
         .title("Calibrate")
-        .default_width(1100)
-        .default_height(600)
+        .default_width(1300)
+        .default_height(800)
         .resizable(true)
         .build();
 
@@ -1032,7 +1227,8 @@ fn build_ui(app: &Application, initial_tab: Option<String>) {
     let appearance_page = appearence::build_appearance_page(&window);
     stack.add_titled(&appearance_page, Some("appearance"), "Appearance");
 
-    let shellset_page = shellsettings::build_shell_page();
+    let stack_c = stack.clone();
+    let shellset_page = shellsettings::build_shell_page(move || stack_c.set_visible_child_name("help"));
     stack.add_titled(&shellset_page, Some("shellset"), "Shell");
 
     let display_page = build_display_page();

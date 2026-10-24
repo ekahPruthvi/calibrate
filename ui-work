@@ -66,7 +66,8 @@ each page shud have a icon on top and small info abt tht page
     dependencies searching
 
 -Help 
-    graphical help pahes for each feature in cynageos
+    and trouble shoot for (relauncher) capsule, waul, altDot (tell the funtions of each of them below them like capsulke does ssd, drag and drop feature, battery and etc)
+    graphical help doc pages for each feature in cynageos (pull from cynagectl)
 
 -user
     username icon (chnage icon/set icon)

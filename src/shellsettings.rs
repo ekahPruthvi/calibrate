@@ -1,9 +1,10 @@
 use gtk4::prelude::*;
 use gtk4::{
-    Align, Box as GtkBox, Button, Dialog, DropTarget, Entry, Frame, Grid, Image, Label, Orientation,
-    Overlay, PolicyType, ProgressBar, Revealer, RevealerTransitionType, ScrolledWindow, gdk, gio, glib,
+    Align, Box as GtkBox, Button, Calendar, CenterBox, Dialog, DrawingArea, DropTarget, Entry, FlowBox, Frame,
+    GestureClick, Grid, Image, Label, Orientation, Overlay, Revealer, RevealerTransitionType,
+    ScrolledWindow, SelectionMode, gdk, gio, glib,
 };
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 use std::fs;
 use std::os::unix::process::CommandExt;
@@ -69,6 +70,59 @@ fn read_widget_states() -> HashMap<String, bool> {
         }
     }
     out
+}
+
+/// Flip one entry inside `widgets :{ ... }` in the `:set` section, e.g.
+/// `cal :true` -> `cal :false`. Edited as text so the rest of the file
+/// (comments, ordering, spacing) stays exactly as it was.
+fn write_widget_state(key: &str, val: bool) -> Result<(), String> {
+    let src = fs::read_to_string(CFGPATH).map_err(|e| format!("failed to read cfg: {e}"))?;
+    let new_val = if val { "true" } else { "false" };
+
+    let mut lines: Vec<String> = src.split('\n').map(|l| l.to_string()).collect();
+    let mut in_widgets = false;
+    let mut entry_indent: Option<String> = None;
+    let mut close_idx: Option<usize> = None;
+    let mut done = false;
+
+    for i in 0..lines.len() {
+        let line = lines[i].clone();
+        let trimmed = line.trim();
+
+        if !in_widgets {
+            if trimmed.starts_with("widgets") && trimmed.contains(":{") {
+                in_widgets = true;
+            }
+            continue;
+        }
+
+        if trimmed == "}" {
+            close_idx = Some(i);
+            break;
+        }
+
+        let indent: String = line.chars().take_while(|c| c.is_whitespace()).collect();
+        if trimmed.split_whitespace().next() == Some(key) {
+            lines[i] = format!("{indent}{key} :{new_val}");
+            done = true;
+            break;
+        }
+        entry_indent.get_or_insert(indent);
+    }
+
+    if !done {
+        // key wasn't there yet, add it just before the closing brace
+        let idx = close_idx.ok_or_else(|| "no widgets block in cfg".to_string())?;
+        let indent = entry_indent.unwrap_or_else(|| "        ".to_string());
+        lines.insert(idx, format!("{indent}{key} :{new_val}"));
+    }
+
+    let out = lines.join("\n");
+    parse(&out).map_err(|e| format!("not writing cfg: {e}"))?;
+    fs::write(CFGPATH, out).map_err(|e| format!("failed to write cfg: {e}"))?;
+
+    println!("[calibrate] widget {key} -> {new_val}");
+    Ok(())
 }
 
 // ---------------------------------------------------------------------------
@@ -256,80 +310,125 @@ fn ghost_shell(kind: &str, enabled: bool) -> GtkBox {
 
 fn ghost_calendar(enabled: bool) -> GtkBox {
     let g = ghost_shell("ghost-cal", enabled);
-    g.append(&ghost_block(60, 8, "ghost-line"));
+    g.set_width_request(270);
+    g.set_height_request(240);
 
-    let grid = Grid::new();
-    grid.set_row_spacing(4);
-    grid.set_column_spacing(4);
-    grid.set_halign(Align::Center);
-    for r in 0..5 {
-        for c in 0..7 {
-            let cls = if r == 2 && c == 3 { "ghost-accent" } else { "ghost-dot" };
-            grid.attach(&ghost_block(9, 9, cls), c, r, 1, 1);
-        }
-    }
-    g.append(&grid);
+    // real GTK calendar, purely decorative: it never takes clicks or focus,
+    // so a click on it falls through to the widget toggle
+    let cal = Calendar::new();
+    cal.add_css_class("ghost-calendar");
+    cal.set_can_target(false);
+    cal.set_can_focus(false);
+    cal.set_focusable(false);
+    cal.set_halign(Align::Center);
+    cal.set_valign(Align::Center);
+    cal.set_vexpand(true);
+    cal.set_height_request(100);
+    g.append(&cal);
     g
 }
 
 fn ghost_system(enabled: bool) -> GtkBox {
     let g = ghost_shell("ghost-sys", enabled);
     g.set_valign(Align::Center);
-    for frac in [0.35, 0.6, 0.8] {
-        let bar = ProgressBar::new();
-        bar.set_fraction(frac);
-        bar.add_css_class("ghost-progress");
-        bar.set_margin_start(4);
-        bar.set_margin_end(4);
-        bar.set_vexpand(true);
-        bar.set_valign(Align::Center);
-        g.append(&bar);
-    }
+    let mus = Image::from_file("/var/lib/cynager/icons/audio.svg");
+    mus.set_pixel_size(56);
+    mus.set_hexpand(true);
+    mus.set_vexpand(true);
+    mus.set_halign(Align::Center);
+    mus.set_valign(Align::Center);
+    let vyln = GtkBox::builder()
+        .css_classes(["ghost-vynl"])
+        .height_request(150)
+        .width_request(150)
+        .halign(Align::Start)
+        .valign(Align::Center)
+        .build();
+    vyln.append(&mus);
+    g.append(&vyln);
     g
 }
 
 fn ghost_battery(enabled: bool) -> GtkBox {
+    const LEVEL: f64 = 57.0;
+
     let g = ghost_shell("ghost-bat", enabled);
+    g.set_halign(Align::Center);
     g.set_valign(Align::Center);
+    g.set_height_request(150);
+    g.set_width_request(150);
 
-    let row = GtkBox::new(Orientation::Horizontal, 2);
-    row.set_halign(Align::Center);
+    let row = GtkBox::new(Orientation::Horizontal, 0);
+    row.set_hexpand(true);
     row.set_vexpand(true);
-    row.set_valign(Align::Center);
 
-    let body = GtkBox::builder()
-        .css_classes(["ghost-battery-body"])
-        .width_request(70)
-        .height_request(34)
-        .build();
-    let fill = ghost_block(46, -1, "ghost-battery-fill");
-    fill.set_margin_top(4);
-    fill.set_margin_bottom(4);
-    fill.set_margin_start(4);
-    fill.set_halign(Align::Start);
-    fill.set_hexpand(false);
-    body.append(&fill);
+    // left column: ring on top, "57 %" in the bottom-left corner
+    let left = GtkBox::new(Orientation::Vertical, 0);
+    left.set_hexpand(true);
+    left.set_vexpand(true);
 
-    let nub = ghost_block(5, 14, "ghost-battery-nub");
-    nub.set_valign(Align::Center);
+    // ring, coloured by CSS `color` on .ghost-battery-ring
+    let ring = DrawingArea::new();
+    ring.add_css_class("ghost-battery-ring");
+    ring.set_content_width(28);
+    ring.set_content_height(28);
+    ring.set_halign(Align::Start);
+    ring.set_valign(Align::Start);
+    ring.set_draw_func(|area, cr, w, h| {
+        #[allow(deprecated)]
+        let c = area.style_context().color();
+        let (w, h) = (w as f64, h as f64);
+        let line = 3.0;
+        let r = (w.min(h) - line) / 2.0;
+        let start = -std::f64::consts::FRAC_PI_2;
+        let end = start + 2.0 * std::f64::consts::PI * (LEVEL / 100.0);
 
-    row.append(&body);
-    row.append(&nub);
+        cr.set_line_width(line);
+        cr.set_line_cap(gtk4::cairo::LineCap::Round);
+        cr.set_source_rgba(c.red() as f64, c.green() as f64, c.blue() as f64, c.alpha() as f64);
+        cr.arc(w / 2.0, h / 2.0, r, start, end);
+        let _ = cr.stroke();
+    });
+
+    let pct_row = GtkBox::new(Orientation::Horizontal, 2);
+    pct_row.set_halign(Align::Start);
+    pct_row.set_valign(Align::End);
+    pct_row.set_vexpand(true);
+
+    let pct = Label::new(Some("57"));
+    pct.add_css_class("ghost-battery-pct");
+    pct.set_valign(Align::End);
+
+    let sym = Label::new(Some("%"));
+    sym.add_css_class("ghost-battery-sym");
+    sym.set_valign(Align::End);
+
+    pct_row.append(&pct);
+    pct_row.append(&sym);
+
+    left.append(&ring);
+    left.append(&pct_row);
+
+    row.append(&left);
     g.append(&row);
     g
 }
 
 fn ghost_app_drawer(enabled: bool) -> GtkBox {
     let g = ghost_shell("ghost-appd", enabled);
+    g.set_halign(Align::Center);
+    g.set_valign(Align::Center);
+    g.set_height_request(150);
+    g.set_width_request(150);
     let grid = Grid::new();
-    grid.set_row_spacing(6);
-    grid.set_column_spacing(6);
+    grid.set_row_spacing(10);
+    grid.set_column_spacing(10);
     grid.set_halign(Align::Center);
     grid.set_valign(Align::Center);
     grid.set_vexpand(true);
-    for r in 0..3 {
+    for r in 0..2 {
         for c in 0..3 {
-            grid.attach(&ghost_block(24, 24, "ghost-app"), c, r, 1, 1);
+            grid.attach(&ghost_block(46, 46, "ghost-app"), c, r, 1, 1);
         }
     }
     g.append(&grid);
@@ -337,15 +436,17 @@ fn ghost_app_drawer(enabled: bool) -> GtkBox {
 }
 
 fn ghost_git(enabled: bool) -> GtkBox {
-    let g = ghost_shell("ghost-git", enabled);
+    let g = ghost_shell("ghost-appd", enabled);
     let grid = Grid::new();
+    g.set_halign(Align::Center);
+    g.set_valign(Align::Center);
     grid.set_row_spacing(3);
     grid.set_column_spacing(3);
     grid.set_halign(Align::Center);
     grid.set_valign(Align::Center);
     grid.set_vexpand(true);
     for r in 0..5 {
-        for c in 0..9 {
+        for c in 0..12 {
             let level = (r * 7 + c * 3 + r * c) % 4;
             grid.attach(&ghost_block(9, 9, &format!("ghost-git-{level}")), c, r, 1, 1);
         }
@@ -366,7 +467,7 @@ fn ghost_sticker(enabled: bool, path: &str) -> (GtkBox, Image) {
     let g = ghost_shell("ghost-stick", enabled);
 
     let img = Image::new();
-    img.set_pixel_size(80);
+    img.set_pixel_size(120);
     img.set_halign(Align::Center);
     img.set_valign(Align::Center);
     img.set_vexpand(true);
@@ -597,6 +698,9 @@ fn open_sticker_dialog(anchor: &impl IsA<gtk4::Widget>, toast: &Toast, img: &Ima
     dialog.present();
 }
 
+/// columns in the widgets grid (fixed so the shared border lines up)
+const WIDGET_COLS: u32 = 3;
+
 fn build_widgets_frame(toast: &Toast) -> Frame {
     let frame = Frame::new(None);
     let boxv = GtkBox::new(Orientation::Vertical, 10);
@@ -621,52 +725,103 @@ fn build_widgets_frame(toast: &Toast) -> Frame {
     let on = |k: &str| states.get(k).copied().unwrap_or(false);
     let sticker_path = read_set_str("sticker").unwrap_or_default();
 
-    let scroller = ScrolledWindow::builder()
-        .hscrollbar_policy(PolicyType::Automatic)
-        .vscrollbar_policy(PolicyType::Never)
-        .propagate_natural_height(true)
-        .hexpand(true)
-        .margin_start(10)
-        .margin_end(10)
-        .margin_bottom(10)
-        .build();
+    let flow = FlowBox::new();
+    flow.set_selection_mode(SelectionMode::None);
+    flow.set_homogeneous(true);
+    flow.set_activate_on_single_click(false);
+    flow.set_min_children_per_line(WIDGET_COLS);
+    flow.set_max_children_per_line(WIDGET_COLS);
+    flow.set_row_spacing(0);
+    flow.set_column_spacing(0);
+    flow.set_halign(Align::Start);
+    flow.add_css_class("widget-grid");
+    flow.set_valign(Align::Start);
+    flow.set_hexpand(true);
+    flow.set_margin_top(10);
+    flow.set_margin_bottom(20);
+    flow.set_margin_start(20);
+    flow.set_margin_end(20);
 
-    let row = GtkBox::new(Orientation::Horizontal, 16);
-    row.set_margin_top(10);
-    row.set_margin_bottom(10);
-    row.set_margin_start(10);
-    row.set_margin_end(10);
-
-    // (key, display name, ghost, has settings)
     let (stick_ghost, stick_img) = ghost_sticker(on("stick"), &sticker_path);
 
     let items: Vec<(&str, &str, GtkBox)> = vec![
-        ("cal", "Calendar", ghost_calendar(on("cal"))),
-        ("sys", "System", ghost_system(on("sys"))),
-        ("bat", "Battery", ghost_battery(on("bat"))),
-        ("stick", "Sticker", stick_ghost),
         ("appd", "App Drawer", ghost_app_drawer(on("appd"))),
+        ("bat", "Battery", ghost_battery(on("bat"))),
+        ("cal", "Calendar", ghost_calendar(on("cal"))),
         ("git", "Git", ghost_git(on("git"))),
+        ("sys", "Music", ghost_system(on("sys"))),
+        ("stick", "Sticker", stick_ghost),
     ];
 
-    for (key, name, ghost) in items {
-        let cell = GtkBox::new(Orientation::Vertical, 6);
-        cell.set_halign(Align::Center);
-        cell.append(&ghost);
+    let total = items.len() as u32;
+    let rows = (total + WIDGET_COLS - 1) / WIDGET_COLS;
 
-        let label_row = GtkBox::new(Orientation::Horizontal, 4);
-        label_row.set_halign(Align::Center);
+    for (idx, (key, name, ghost)) in items.into_iter().enumerate() {
+        let idx = idx as u32;
+        let cell = GtkBox::new(Orientation::Vertical, 8);
+        cell.add_css_class("widget-cell");
+        cell.set_margin_top(12);
+        cell.set_margin_bottom(12);
+        cell.set_margin_start(12);
+        cell.set_margin_end(12);
+        ghost.set_halign(Align::Center);
+        cell.append(&ghost);
+        ghost.set_cursor_from_name(Some("pointer"));
+        ghost.set_tooltip_text(Some("Click to toggle"));
+
+        // name centred, gear (if any) pinned to the right end
+        let label_row = CenterBox::new();
+        label_row.set_hexpand(true);
 
         let lbl = Label::new(Some(name));
         lbl.add_css_class("frame-subtitle");
         if !on(key) {
             lbl.add_css_class("ghost-label-off");
         }
-        label_row.append(&lbl);
+        label_row.set_center_widget(Some(&lbl));
+
+        // click the ghost -> flip true/false in info.probe
+        {
+            let state = Rc::new(Cell::new(on(key)));
+            let click = GestureClick::new();
+            click.set_button(gdk::BUTTON_PRIMARY);
+            let ghost_c = ghost.clone();
+            let lbl_c = lbl.clone();
+            let toast = toast.clone();
+            click.connect_released(move |_, _, _, _| {
+                let next = !state.get();
+                match write_widget_state(key, next) {
+                    Ok(()) => {
+                        state.set(next);
+                        if next {
+                            ghost_c.remove_css_class("ghost-widget-off");
+                            lbl_c.remove_css_class("ghost-label-off");
+                        } else {
+                            ghost_c.add_css_class("ghost-widget-off");
+                            lbl_c.add_css_class("ghost-label-off");
+                        }
+                        toast.show(&format!(
+                            "{name} {}",
+                            if next { "enabled" } else { "disabled" }
+                        ));
+                    }
+                    Err(e) => {
+                        eprintln!("[calibrate] {e}");
+                        toast.show("Couldn't change widget");
+                    }
+                }
+            });
+            ghost.add_controller(click);
+        }
 
         if key == "git" || key == "stick" {
             let gear = Button::new();
-            gear.set_child(Some(&Image::from_icon_name("emblem-system-symbolic")));
+            gear.set_child(Some(
+                &Image::builder()
+                    .file("/var/lib/cynager/icons/cog.svg")
+                    .pixel_size(32)
+                    .build()
+            ));
             gear.add_css_class("flat");
             gear.add_css_class("ghost-gear");
             gear.set_cursor_from_name(Some("pointer"));
@@ -690,15 +845,24 @@ fn build_widgets_frame(toast: &Toast) -> Frame {
                 let img = stick_img.clone();
                 gear.connect_clicked(move |b| open_sticker_dialog(b, &toast, &img));
             }
-            label_row.append(&gear);
+            label_row.set_end_widget(Some(&gear));
         }
 
         cell.append(&label_row);
-        row.append(&cell);
+
+        let cell_frame = GtkBox::new(Orientation::Vertical, 0);
+        cell_frame.add_css_class("widget-cell-frame");
+        if idx % WIDGET_COLS == WIDGET_COLS - 1 || idx == total - 1 {
+            cell_frame.add_css_class("last-col");
+        }
+        if idx / WIDGET_COLS == rows - 1 {
+            cell_frame.add_css_class("last-row");
+        }
+        cell_frame.append(&cell);
+        flow.insert(&cell_frame, -1);
     }
 
-    scroller.set_child(Some(&row));
-    boxv.append(&scroller);
+    boxv.append(&flow);
     frame.set_child(Some(&boxv));
     frame
 }
@@ -707,7 +871,9 @@ fn build_widgets_frame(toast: &Toast) -> Frame {
 // page
 // ---------------------------------------------------------------------------
 
-pub fn build_shell_page() -> Overlay {
+/// `on_troubleshoot` is called when the Troubleshoot button is clicked;
+/// pass the closure that switches the app to the Help tab.
+pub fn build_shell_page(on_troubleshoot: impl Fn() + 'static) -> Overlay {
     let content = GtkBox::new(Orientation::Vertical, 16);
 
     let card = GtkBox::new(Orientation::Vertical, 10);
@@ -737,6 +903,32 @@ pub fn build_shell_page() -> Overlay {
     card.append(&build_status_bar(&toast));
 
     content.append(&card);
+
+    // "Something not working right?" -> Help tab
+    let helpframe = Frame::new(None);
+
+    let helprow = GtkBox::new(Orientation::Horizontal, 12);
+    helprow.set_margin_top(16);
+    helprow.set_margin_bottom(16);
+    helprow.set_margin_start(20);
+    helprow.set_margin_end(20);
+
+    let helplbl = Label::new(Some("Something not working right?"));
+    helplbl.add_css_class("frame-title");
+    helplbl.set_halign(Align::Start);
+    helplbl.set_valign(Align::Center);
+    helplbl.set_hexpand(true);
+
+    let helpbtn = Button::with_label("Troubleshoot");
+    helpbtn.add_css_class("sub-btn");
+    helpbtn.set_valign(Align::Center);
+    helpbtn.set_cursor_from_name(Some("pointer"));
+    helpbtn.connect_clicked(move |_| on_troubleshoot());
+
+    helprow.append(&helplbl);
+    helprow.append(&helpbtn);
+    helpframe.set_child(Some(&helprow));
+    content.append(&helpframe);
 
     let outframe = Frame::new(None);
 
