@@ -820,7 +820,7 @@ fn load_css() {
         .shell-toast-label { color: white; }
         .monitor-btn {
             background-color: #053bff;
-            border: 15px solid #fffbd5;
+            border: 10px solid #fffbd5;
             border-radius: 30px;
             padding: 30px;
 
@@ -837,6 +837,7 @@ fn load_css() {
         .monitor-btn-label { font-weight: 600; }
         .monitor-selected { 
             border: 17px solid black; 
+            outline: 2px solid white;
         }
 
         "#,
