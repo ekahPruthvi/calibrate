@@ -72,6 +72,22 @@ fn read_widget_states() -> HashMap<String, bool> {
     out
 }
 
+/// `nocsd :{ steam :true harbor :false }` -> ["steam"] (apps with nocsd true)
+fn read_nocsd_apps() -> Vec<String> {
+    let Ok(src) = fs::read_to_string(CFGPATH) else { return Vec::new() };
+    let Ok(doc) = parse(&src) else { return Vec::new() };
+
+    let mut out = Vec::new();
+    if let Some(map) = doc.get("set", "nocsd").and_then(|v| v.as_map()) {
+        for e in map.iter() {
+            if e.value.as_str() == Some("true") {
+                out.push(e.key.to_string());
+            }
+        }
+    }
+    out
+}
+
 /// Flip one entry inside `widgets :{ ... }` in the `:set` section, e.g.
 /// `cal :true` -> `cal :false`. Edited as text so the rest of the file
 /// (comments, ordering, spacing) stays exactly as it was.
@@ -492,7 +508,6 @@ fn open_setting_dialog(
         builder = builder.transient_for(&win);
     }
     let dialog = builder.build();
-    dialog.add_button("Cancel", gtk4::ResponseType::Cancel);
     dialog.add_button("Save", gtk4::ResponseType::Accept);
 
     let outer = GtkBox::new(Orientation::Vertical, 8);
@@ -594,7 +609,6 @@ fn open_sticker_dialog(anchor: &impl IsA<gtk4::Widget>, toast: &Toast, img: &Ima
         builder = builder.transient_for(&win);
     }
     let dialog = builder.build();
-    dialog.add_button("Cancel", gtk4::ResponseType::Cancel);
     dialog.connect_response(|d, _| d.close());
 
     let outer = GtkBox::new(Orientation::Vertical, 8);
@@ -873,7 +887,110 @@ fn build_widgets_frame(toast: &Toast) -> Frame {
 
 /// `on_troubleshoot` is called when the Troubleshoot button is clicked;
 /// pass the closure that switches the app to the Help tab.
-pub fn build_shell_page(on_troubleshoot: impl Fn() + 'static) -> Overlay {
+/// `on_apps` is called when an app icon in the Server Side Decorations frame is
+/// clicked; pass the closure that switches the app to the Applications tab.
+/// Icon for an app name from info.probe: its .desktop entry's icon if there
+/// is one, else a theme icon with that name, else a generic fallback.
+fn app_icon(app: &str) -> Image {
+    let img = Image::new();
+    img.set_pixel_size(48);
+    img.set_halign(Align::Center);
+
+    if let Some(icon) = gio::DesktopAppInfo::new(&format!("{app}.desktop")).and_then(|i| i.icon()) {
+        img.set_from_gicon(&icon);
+    } else if gdk::Display::default()
+        .map(|d| gtk4::IconTheme::for_display(&d).has_icon(app))
+        .unwrap_or(false)
+    {
+        img.set_icon_name(Some(app));
+    } else {
+        img.set_icon_name(Some("application-x-executable"));
+    }
+    img
+}
+
+fn build_ssd_frame(on_apps: impl Fn() + 'static) -> Frame {
+    let frame = Frame::new(None);
+    let boxv = GtkBox::new(Orientation::Vertical, 10);
+
+    let title = Label::new(Some("Server Side Decorations"));
+    title.add_css_class("frame-title");
+    title.set_halign(Align::Start);
+    title.set_margin_start(20);
+    title.set_margin_top(20);
+    title.set_margin_end(20);
+
+    let subtitle = Label::new(Some("Window Control Buttons (SSD) and window resize button disabled for the below applications.\nTo change them please goto the specific application page and change them"));
+    subtitle.add_css_class("frame-subtitle");
+    subtitle.set_halign(Align::Start);
+    subtitle.set_margin_start(20);
+    subtitle.set_margin_end(20);
+
+    boxv.append(&title);
+    boxv.append(&subtitle);
+
+    // app icons with the name below; click -> Applications page
+    let on_apps: Rc<dyn Fn()> = Rc::new(on_apps);
+
+    let flow = FlowBox::new();
+    flow.set_selection_mode(SelectionMode::None);
+    flow.set_homogeneous(false);
+    flow.set_activate_on_single_click(false);
+    flow.set_row_spacing(12);
+    flow.set_column_spacing(12);
+    flow.set_halign(Align::Start);
+    flow.set_margin_start(20);
+    flow.set_margin_end(20);
+    flow.set_margin_top(6);
+    flow.set_margin_bottom(20);
+
+    let apps = read_nocsd_apps();
+    if apps.is_empty() {
+        let none = Label::new(Some("No apps have server side decorations disabled."));
+        none.add_css_class("frame-subtitle");
+        none.set_halign(Align::Start);
+        none.set_margin_start(20);
+        none.set_margin_bottom(20);
+        boxv.append(&none);
+    } else {
+        for app in &apps {
+            let icon = app_icon(app);
+
+            let name = Label::new(Some(app));
+            name.add_css_class("frame-subtitle");
+            name.set_halign(Align::Center);
+
+            let cell = GtkBox::new(Orientation::Vertical, 6);
+            cell.set_margin_top(6);
+            cell.set_margin_bottom(6);
+            cell.set_margin_start(6);
+            cell.set_margin_end(6);
+            cell.append(&icon);
+            cell.append(&name);
+
+            let btn = Button::new();
+            btn.set_child(Some(&cell));
+            btn.add_css_class("flat");
+            btn.add_css_class("ssd-app");
+            btn.set_cursor_from_name(Some("pointer"));
+            btn.set_tooltip_text(Some(&format!("{app} settings")));
+
+            let on_apps = on_apps.clone();
+            btn.connect_clicked(move |_| on_apps());
+
+            flow.insert(&btn, -1);
+        }
+        boxv.append(&flow);
+    }
+
+    frame.set_child(Some(&boxv));
+    frame
+}
+
+pub fn build_shell_page(
+    on_troubleshoot: impl Fn() + 'static,
+    on_apps: impl Fn() + 'static,
+) -> Overlay {
     let content = GtkBox::new(Orientation::Vertical, 16);
 
     let card = GtkBox::new(Orientation::Vertical, 10);
@@ -928,7 +1045,6 @@ pub fn build_shell_page(on_troubleshoot: impl Fn() + 'static) -> Overlay {
     helprow.append(&helplbl);
     helprow.append(&helpbtn);
     helpframe.set_child(Some(&helprow));
-    content.append(&helpframe);
 
     let outframe = Frame::new(None);
 
@@ -991,9 +1107,11 @@ pub fn build_shell_page(on_troubleshoot: impl Fn() + 'static) -> Overlay {
     outbox.append(&monrow);
 
     outframe.set_child(Some(&outbox));
-    content.append(&outframe);
 
+    content.append(&outframe);
+    content.append(&build_ssd_frame(on_apps));
     content.append(&build_widgets_frame(&toast));
+    content.append(&helpframe);
 
     let overlay = Overlay::new();
     let scroller: ScrolledWindow = page_scroller(&content);

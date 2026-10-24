@@ -16,7 +16,7 @@ const APP_ID: &str = "ekah.scu.calibrate";
 
 const TAB_IDS: &[&str] = &[
     "home", "appearance", "shellset", "display", "sound", "net", "blue", 
-    "Storage", "bat", "shortcuts", "pills", "apps", "user", "abt",
+    "Storage", "bat", "shortcuts", "pills", "apps", "user", "help", "abt",
 ];
 
 mod home;
@@ -42,6 +42,7 @@ const MENU_ITEMS: &[MenuItem] = &[
     MenuItem { id: "pills", title: "Pills" },
     MenuItem { id: "apps", title: "Applications" },
     MenuItem { id: "user", title: "User" },
+    MenuItem { id: "help", title: "Help" },
     MenuItem { id: "abt", title: "About" },
 ];
 
@@ -962,6 +963,10 @@ fn page_meta(id: &str, username: &str) -> (String, String) {
             "User".to_string(),
             "Account details and user preferences.".to_string(),
         ),
+        "help" => (
+            "Help".to_string(),
+            "Troubleshooting tips and common fixes.".to_string(),
+        ),
         "abt" => (
             "About".to_string(),
             "System and version information.".to_string(),
@@ -1107,6 +1112,74 @@ fn build_network_page() -> ScrolledWindow {
     page_scroller(&content)
 }
 
+fn build_help_page() -> ScrolledWindow {
+    let content = GtkBox::new(Orientation::Vertical, 16);
+
+    let card = GtkBox::new(Orientation::Vertical, 10);
+    card.add_css_class("shortcut-card");
+    card.add_css_class("detail-card");
+    card.set_margin_top(10);
+    card.set_hexpand(true);
+
+    let title = Label::new(Some("Help"));
+    title.add_css_class("shortcut-title");
+    title.set_halign(Align::Center);
+
+    let subtitle = Label::new(Some("Common problems and how to fix them."));
+    subtitle.add_css_class("shortcut-desc");
+    subtitle.set_halign(Align::Center);
+
+    card.append(&title);
+    card.append(&subtitle);
+    content.append(&card);
+
+    let topics: [(&str, &str); 4] = [
+        (
+            "The shell isn't showing",
+            "Open the Shell tab. If it says Capsule shell is dead, press Restart.",
+        ),
+        (
+            "Widget changes don't show up",
+            "Toggling a widget only updates info.probe. Restart Capsule from the Shell tab to apply it.",
+        ),
+        (
+            "The shell is on the wrong screen",
+            "Pick the display you want under Main Shell Output in the Shell tab.",
+        ),
+        (
+            "Settings won't save",
+            "Calibrate writes to /var/lib/cynager/info.probe. Check that your user can write to that file.",
+        ),
+    ];
+
+    for (heading, body) in topics {
+        let frame = Frame::new(None);
+        let inner = GtkBox::new(Orientation::Vertical, 6);
+        inner.set_margin_top(16);
+        inner.set_margin_bottom(16);
+        inner.set_margin_start(20);
+        inner.set_margin_end(20);
+
+        let h = Label::new(Some(heading));
+        h.add_css_class("frame-title");
+        h.set_halign(Align::Start);
+        h.set_xalign(0.0);
+
+        let b = Label::new(Some(body));
+        b.add_css_class("frame-subtitle");
+        b.set_halign(Align::Start);
+        b.set_xalign(0.0);
+        b.set_wrap(true);
+
+        inner.append(&h);
+        inner.append(&b);
+        frame.set_child(Some(&inner));
+        content.append(&frame);
+    }
+
+    page_scroller(&content)
+}
+
 fn build_about_page(username: &str) -> ScrolledWindow {
     let content = GtkBox::new(Orientation::Vertical, 16);
 
@@ -1227,8 +1300,12 @@ fn build_ui(app: &Application, initial_tab: Option<String>) {
     let appearance_page = appearence::build_appearance_page(&window);
     stack.add_titled(&appearance_page, Some("appearance"), "Appearance");
 
-    let stack_c = stack.clone();
-    let shellset_page = shellsettings::build_shell_page(move || stack_c.set_visible_child_name("help"));
+    let stack_help = stack.clone();
+    let stack_apps = stack.clone();
+    let shellset_page = shellsettings::build_shell_page(
+        move || stack_help.set_visible_child_name("help"),
+        move || stack_apps.set_visible_child_name("apps"),
+    );
     stack.add_titled(&shellset_page, Some("shellset"), "Shell");
 
     let display_page = build_display_page();
@@ -1260,6 +1337,9 @@ fn build_ui(app: &Application, initial_tab: Option<String>) {
 
     let user_page = build_placeholder_page("User", "User account settings are coming soon.");
     stack.add_titled(&user_page, Some("user"), "User");
+
+    let help_page = build_help_page();
+    stack.add_titled(&help_page, Some("help"), "Help");
 
     let about_page = build_about_page(&username);
     stack.add_titled(&about_page, Some("abt"), "About");
