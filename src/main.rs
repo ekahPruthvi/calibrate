@@ -1,8 +1,8 @@
 use gtk4::prelude::*;
 use gtk4::{
     Application, ApplicationWindow, Box as GtkBox, Label, ListBox, ListBoxRow,
-    Orientation, ScrolledWindow, SearchEntry, Stack, Separator, Switch, Scale, SpinButton,
-    Adjustment, ComboBoxText, Frame, Align, CssProvider, glib,
+    Orientation, ScrolledWindow, SearchEntry, Stack, Separator, Switch, SpinButton,
+    Adjustment, Frame, Align, CssProvider, Image, glib,
 };
 use std::cell::RefCell;
 use std::fs;
@@ -10,21 +10,20 @@ use std::process::exit;
 use std::rc::Rc;
 use std::time::Duration;
 
-
-
 use self_update::cargo_crate_version;
 
 const APP_ID: &str = "ekah.scu.calibrate";
 
 const TAB_IDS: &[&str] = &[
     "home", "appearance", "shellset", "display", "sound", "net", "blue", 
-    "Storage", "bat", "shortcuts", "pills", "apps", "user", "help", "abt",
+    "Storage", "bat", "shortcuts", "pills", "apps", "help", "abt",
 ];
 
 mod home;
 mod appearence;
 mod shellsettings;
 mod display;
+mod sound;
 
 struct MenuItem {
     id: &'static str,
@@ -44,10 +43,30 @@ const MENU_ITEMS: &[MenuItem] = &[
     MenuItem { id: "shortcuts", title: "Shortcuts" },
     MenuItem { id: "pills", title: "Pills" },
     MenuItem { id: "apps", title: "Applications" },
-    MenuItem { id: "user", title: "User" },
     MenuItem { id: "help", title: "Help" },
     MenuItem { id: "abt", title: "About" },
 ];
+
+/// Icon shown next to each entry in the side tab switcher (theme icon names).
+fn menu_icon(id: &str) -> &'static str {
+    match id {
+        "home" => "go-home-symbolic",
+        "appearance" => "gnumeric-brush",
+        "shellset" => "automated-tasks",
+        "display" => "video-display-symbolic",
+        "sound" => "audio-speakers-symbolic",
+        "net" => "network-wireless-symbolic",
+        "blue" => "bluetooth-symbolic",
+        "Storage" => "media-floppy-symbolic",
+        "bat" => "battery-symbolic",
+        "shortcuts" => "input-keyboard-symbolic",
+        "pills" => "applications-other-symbolic",
+        "apps" => "view-app-grid-symbolic",
+        "help" => "help-browser-symbolic",
+        "abt" => "help-about-symbolic",
+        _ => "preferences-system-symbolic",
+    }
+}
 
 fn read_username() -> String {
     let path = "/usr/share/octobacillus/user.octo";
@@ -142,8 +161,8 @@ fn load_css() {
 
         .menu-list row {
             all: unset;
-            padding: 10px 12px;
-            border-radius: 8px;
+            padding: 8px;
+            border-radius: 25px;
             color: #ffffffd2;
             background-color: transparent;
             border: 1px solid transparent;
@@ -155,8 +174,7 @@ fn load_css() {
         }
 
         .menu-list row:hover {
-            background-color: #ffffff00;
-            border: 1px solid #ffffff2f;
+            background-color: #ffffff0c;
         }
 
         .page-header-bar {
@@ -225,23 +243,31 @@ fn load_css() {
             font-weight: 600;
             font-size: 22px;
             color: #f2f2f5;
+            transition:
+                all 200ms cubic-bezier(0.4, 0, 0.2, 1);
         }
 
         .shortcut-desc {
             color: #8a8a99;
             font-size: 12px;
+            transition:
+                all 200ms cubic-bezier(0.4, 0, 0.2, 1);
         }
 
         .frame-title {
             font-weight: 600;
             font-size: 18px;
             color: #f2f2f5;
+            transition:
+                all 200ms cubic-bezier(0.4, 0, 0.2, 1);
         }
 
         .frame-subtitle {
             font-weight: 300;
             font-size: 12px;
             color: #f2f2f567;
+            transition:
+                all 200ms cubic-bezier(0.4, 0, 0.2, 1);
         }
 
         .row-label {
@@ -296,14 +322,28 @@ fn load_css() {
             box-shadow: rgba(50, 50, 93, 0.25) 0px 6px 12px -2px, rgba(0, 0, 0, 0.3) 0px 3px 7px -3px;
         }
 
+        .card-icons-smol {
+            padding: 3px;
+            background: linear-gradient(#fff2, #0001),  #bebebe;
+            box-shadow:
+                1px 1px 2px -1px #fff inset,
+                0 2px 1px #00000010,
+                0 4px 2px #00000010,
+                0 8px 4px #00000010,
+                0 16px 8px #00000010,
+                0 32px 16px #00000010;
+            color: black;
+            transition:
+                all 200ms cubic-bezier(0.4, 0, 0.2, 1);
+            color: black;
+            border-radius: 11px;
+            box-shadow: rgba(50, 50, 93, 0.25) 0px 6px 12px -2px, rgba(0, 0, 0, 0.3) 0px 3px 7px -3px;
+        }       
+
         .moduleCos {
             padding: 15px;
-            background-color: rgba(34, 34, 34, 0.559);
+            background-color: rgba(255, 255, 255, 0.05);
             border: 2px solid transparent;
-            background-image: linear-gradient(rgb(29, 29, 29), rgb(29, 29, 29)),
-                                linear-gradient(0deg, rgb(9, 9, 9), rgba(94, 94, 94, 0.686));
-            background-origin: border-box;
-            background-clip: padding-box, border-box;
             border-radius: 40px;
             min-width: 300px;
         }
@@ -403,7 +443,7 @@ fn load_css() {
         }
 
         .sub-btn:hover {
-            transform: scale(1.03);
+            background: linear-gradient(#fff2, #0001),  #f0ffcb;
         }
 
         .sub-btn:active {
@@ -464,7 +504,7 @@ fn load_css() {
             transition: all 400ms cubic-bezier(0.4, 0.0, 0.2, 1);
         }
         .ghost-widget:hover {
-            transform: translateZ(5px) rotateX(15deg) rotateY(5deg);
+            transform: translateZ(10px) rotateX(25deg) rotateY(10deg);
         }
         .ghost-widget-off { filter: grayscale(1); opacity: 0.35; }
         .ghost-label-off { opacity: 0.2; }
@@ -825,7 +865,7 @@ fn load_css() {
 
         .shell-toast { background: rgba(30,30,30,0.92); border-radius: 14px; padding: 10px 18px; }
         .shell-toast-label { color: white; }
-        .search-flash { background-color: #d8ff7c40; border-radius: 8px; }
+        .search-flash { background-color: #d8ff7c40; border-radius: 8px; transform: scale(1.09);}
         .monitor-btn {
             background-color: #053bff;
             border: 10px solid #fffbd5;
@@ -846,6 +886,76 @@ fn load_css() {
         .monitor-selected { 
             border: 17px solid black; 
             outline: 2px solid white;
+        }
+
+        scale {
+            padding: 12px 0;
+        }
+
+        /* The background track */
+        scale trough {
+            background-color: #e0e0e03c;
+            border-radius: 20px;
+            min-height: 10px;
+            min-width: 4px;
+            box-shadow: rgba(50, 50, 93, 0.25) 0px 30px 60px -12px inset;
+        }
+
+        /* The filled/highlighted portion of the track (left/top of the thumb) */
+        scale trough highlight {
+            background-color: #bdbdbd;
+            border-radius: 20px;
+        }
+
+        /* The draggable handle/thumb */
+        scale slider {
+            min-width: 34px;
+            min-height: 5px;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+            border: 2px solid transparent;
+            background-image: linear-gradient(rgb(214, 214, 214), rgb(214, 214, 214)),
+                                linear-gradient(0deg, rgb(180, 179, 179), rgb(253, 253, 253));
+            background-origin: border-box;
+            background-clip: padding-box, border-box;
+            border-radius: 40px;
+            margin: -15px;
+        }
+
+        scale slider:active {
+            transform: scale(1.09);
+            animation: jigglhehe 0.5s 1 linear;
+        }
+
+
+        @keyframes jigglhehe {
+            0% {
+                transform: scale(0.7, 1.3);
+            }
+
+            25% {
+                transform: scale(1.3, 0.7);
+            }
+
+            50% {
+                transform: scale(0.7, 1.3);
+            }
+
+            75% {
+                transform: scale(1.3, 0.7);
+            }
+
+            100% {
+                transform: scale(1, 1);
+            }
+        }
+
+        /* Tick marks along the track */
+        scale marks {
+            color: #cccccc; /* Color of the tick lines */   
+        }
+
+        scale marks.top, scale marks.bottom {
+            padding: 4px 0;
         }
 
         "#,
@@ -968,10 +1078,6 @@ fn page_meta(id: &str, username: &str) -> (String, String) {
             "Applications".to_string(),
             "Manage installed applications and defaults.".to_string(),
         ),
-        "user" => (
-            "User".to_string(),
-            "Account details and user preferences.".to_string(),
-        ),
         "help" => (
             "Help".to_string(),
             "Troubleshooting tips and common fixes.".to_string(),
@@ -1007,44 +1113,6 @@ fn labeled_row(label_text: &str, caption: &str, widget: &impl IsA<gtk4::Widget>)
     row.append(&text_box);
     row.append(widget);
     row
-}
-
-fn build_sound_page() -> ScrolledWindow {
-    let content = GtkBox::new(Orientation::Vertical, 16);
-
-    let frame = Frame::new(None);
-    let list = ListBox::new();
-    list.set_selection_mode(gtk4::SelectionMode::None);
-
-    let volume = Scale::with_range(Orientation::Horizontal, 0.0, 100.0, 1.0);
-    volume.set_value(58.0);
-    volume.set_size_request(180, -1);
-    list.append(&ListBoxRow::builder()
-        .child(&labeled_row("Output Volume", "Master output level", &volume))
-        .build());
-
-    list.append(&Separator::new(Orientation::Horizontal));
-
-    let output_device = ComboBoxText::new();
-    output_device.append_text("Built-in Speakers");
-    output_device.append_text("Headphones");
-    output_device.append_text("HDMI Output");
-    output_device.set_active(Some(0));
-    list.append(&ListBoxRow::builder()
-        .child(&labeled_row("Output Device", "Where sound is played", &output_device))
-        .build());
-
-    list.append(&Separator::new(Orientation::Horizontal));
-
-    let mute_alerts = Switch::new();
-    mute_alerts.set_valign(Align::Center);
-    list.append(&ListBoxRow::builder()
-        .child(&labeled_row("Mute Alert Sounds", "Silence system notification sounds", &mute_alerts))
-        .build());
-
-    frame.set_child(Some(&list));
-    content.append(&frame);
-    page_scroller(&content)
 }
 
 fn build_network_page() -> ScrolledWindow {
@@ -1290,9 +1358,19 @@ fn build_right_panel(stack: &Stack) -> (GtkBox, ListBox) {
         row.set_widget_name(item.id);
         row.set_margin_bottom(5);
 
+        let icon = Image::from_icon_name(menu_icon(item.id));
+        icon.set_pixel_size(20);
+        icon.set_valign(Align::Center);
+        icon.add_css_class("card-icons-smol");
+
         let label = Label::new(Some(item.title));
         label.set_halign(Align::Start);
-        row.set_child(Some(&label));
+        label.set_valign(Align::Center);
+
+        let row_content = GtkBox::new(Orientation::Horizontal, 12);
+        row_content.append(&icon);
+        row_content.append(&label);
+        row.set_child(Some(&row_content));
 
         list.append(&row);
     }
@@ -1472,7 +1550,7 @@ fn build_ui(app: &Application, initial_tab: Option<String>) {
     let display_page = display::build_display_page();
     stack.add_titled(&display_page, Some("display"), "Display");
 
-    let sound_page = build_sound_page();
+    let sound_page = sound::build_sound_page();
     stack.add_titled(&sound_page, Some("sound"), "Sound");
 
     let network_page = build_network_page();
@@ -1495,9 +1573,6 @@ fn build_ui(app: &Application, initial_tab: Option<String>) {
 
     let apps_page = build_placeholder_page("Applications", "Application settings are coming soon.");
     stack.add_titled(&apps_page, Some("apps"), "Applications");
-
-    let user_page = build_placeholder_page("User", "User account settings are coming soon.");
-    stack.add_titled(&user_page, Some("user"), "User");
 
     let help_page = build_help_page();
     stack.add_titled(&help_page, Some("help"), "Help");

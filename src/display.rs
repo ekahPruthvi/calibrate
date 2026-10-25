@@ -500,7 +500,7 @@ fn load_css() {
         .canvas-mon-off { opacity: 0.45; }
         .canvas-mon-name { font-weight: 700; }
         .setting-list {
-            background-color: #00000033;
+            background-color: #ffffff00;
             border: 1px solid #ffffff39;
             border-radius: 20px;
         }
