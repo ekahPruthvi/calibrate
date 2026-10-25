@@ -29,10 +29,9 @@ each page shud have a icon on top and small info abt tht page
         startup sound
     
 -Display
-    wallpaper showcase and cog icon link to Appearence section
     displays tab with on or off toggle (in niri config use off)
     set scale, resolution, and refresh rate 
-    and rotation setting
+    and rotation setting and move them in canvas
 
 -Sound settings
     copy from ctrl capsules

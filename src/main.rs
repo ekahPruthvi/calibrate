@@ -2,11 +2,13 @@ use gtk4::prelude::*;
 use gtk4::{
     Application, ApplicationWindow, Box as GtkBox, Label, ListBox, ListBoxRow,
     Orientation, ScrolledWindow, SearchEntry, Stack, Separator, Switch, Scale, SpinButton,
-    Adjustment, ComboBoxText, Frame, Align, CssProvider,
+    Adjustment, ComboBoxText, Frame, Align, CssProvider, glib,
 };
+use std::cell::RefCell;
 use std::fs;
 use std::process::exit;
 use std::rc::Rc;
+use std::time::Duration;
 
 
 
@@ -22,6 +24,7 @@ const TAB_IDS: &[&str] = &[
 mod home;
 mod appearence;
 mod shellsettings;
+mod display;
 
 struct MenuItem {
     id: &'static str,
@@ -294,11 +297,15 @@ fn load_css() {
         }
 
         .moduleCos {
-            padding: 20px;
+            padding: 15px;
+            background-color: rgba(34, 34, 34, 0.559);
+            border: 2px solid transparent;
+            background-image: linear-gradient(rgb(29, 29, 29), rgb(29, 29, 29)),
+                                linear-gradient(0deg, rgb(9, 9, 9), rgba(94, 94, 94, 0.686));
+            background-origin: border-box;
+            background-clip: padding-box, border-box;
+            border-radius: 40px;
             min-width: 300px;
-            background-color: #0000005b;
-            border: 1px solid #ffffff39;
-            border-radius: 20px;
         }
 
         .moduleTitle {
@@ -818,6 +825,7 @@ fn load_css() {
 
         .shell-toast { background: rgba(30,30,30,0.92); border-radius: 14px; padding: 10px 18px; }
         .shell-toast-label { color: white; }
+        .search-flash { background-color: #d8ff7c40; border-radius: 8px; }
         .monitor-btn {
             background-color: #053bff;
             border: 10px solid #fffbd5;
@@ -1001,45 +1009,6 @@ fn labeled_row(label_text: &str, caption: &str, widget: &impl IsA<gtk4::Widget>)
     row
 }
 
-fn build_display_page() -> ScrolledWindow {
-    let content = GtkBox::new(Orientation::Vertical, 16);
-
-    let frame = Frame::new(None);
-    let list = ListBox::new();
-    list.set_selection_mode(gtk4::SelectionMode::None);
-
-    let brightness = Scale::with_range(Orientation::Horizontal, 0.0, 100.0, 1.0);
-    brightness.set_value(72.0);
-    brightness.set_size_request(180, -1);
-    list.append(&ListBoxRow::builder()
-        .child(&labeled_row("Brightness", "Adjust screen brightness", &brightness))
-        .build());
-
-    list.append(&Separator::new(Orientation::Horizontal));
-
-    let night_light = Switch::new();
-    night_light.set_active(true);
-    night_light.set_valign(Align::Center);
-    list.append(&ListBoxRow::builder()
-        .child(&labeled_row("Night Light", "Reduce blue light after sunset", &night_light))
-        .build());
-
-    list.append(&Separator::new(Orientation::Horizontal));
-
-    let resolution = ComboBoxText::new();
-    resolution.append_text("1920 x 1080");
-    resolution.append_text("2560 x 1440");
-    resolution.append_text("3840 x 2160");
-    resolution.set_active(Some(0));
-    list.append(&ListBoxRow::builder()
-        .child(&labeled_row("Resolution", "Native display resolution", &resolution))
-        .build());
-
-    frame.set_child(Some(&list));
-    content.append(&frame);
-    page_scroller(&content)
-}
-
 fn build_sound_page() -> ScrolledWindow {
     let content = GtkBox::new(Orientation::Vertical, 16);
 
@@ -1211,20 +1180,107 @@ fn build_about_page(username: &str) -> ScrolledWindow {
     page_scroller(&content)
 }
 
+// ───────────────────────────── settings search ─────────────────────────────
+
+/// One searchable title/subtitle somewhere inside a page.
+struct SearchHit {
+    page: &'static str,
+    page_title: &'static str,
+    label: Label,
+}
+
+fn collect_labels(root: &gtk4::Widget, out: &mut Vec<Label>) {
+    if let Ok(l) = root.clone().downcast::<Label>() {
+        out.push(l);
+    }
+    let mut child = root.first_child();
+    while let Some(c) = child {
+        collect_labels(&c, out);
+        child = c.next_sibling();
+    }
+}
+
+/// Walks every page and keeps the labels that are titles or subtitles.
+/// The label widget is stored (not its text), so text that changes later is searched as-is.
+fn build_search_index(stack: &Stack) -> Vec<SearchHit> {
+    let mut hits = Vec::new();
+    for item in MENU_ITEMS {
+        let Some(page) = stack.child_by_name(item.id) else { continue };
+        let mut labels = Vec::new();
+        collect_labels(&page, &mut labels);
+
+        // sound / network build their rows with `labeled_row` (row-label + row-caption)
+        let rows_too = matches!(item.id, "sound" | "net");
+        for l in labels {
+            let is_title = l.has_css_class("frame-title")
+                || l.has_css_class("frame-subtitle")
+                || l.has_css_class("setting-title")
+                || l.has_css_class("shortcut-title")
+                || l.has_css_class("shortcut-desc")
+                || (rows_too && (l.has_css_class("row-label") || l.has_css_class("row-caption")));
+            if is_title && !l.text().trim().is_empty() {
+                hits.push(SearchHit { page: item.id, page_title: item.title, label: l });
+            }
+        }
+    }
+    hits
+}
+
+/// Briefly highlights `label` and scrolls its page so it is visible.
+fn scroll_to_label(label: Label, tries: u8) {
+    glib::timeout_add_local_once(Duration::from_millis(80), move || {
+        // nearest ancestor that actually scrolls vertically
+        let mut scroller: Option<ScrolledWindow> = None;
+        let mut w = label.parent();
+        while let Some(x) = w {
+            if let Ok(sc) = x.clone().downcast::<ScrolledWindow>() {
+                if sc.policy().1 != gtk4::PolicyType::Never {
+                    scroller = Some(sc);
+                    break;
+                }
+            }
+            w = x.parent();
+        }
+
+        let pos = scroller.as_ref().and_then(|sc| {
+            let content = sc.child().and_downcast::<gtk4::Viewport>().and_then(|v| v.child())?;
+            label.translate_coordinates(&content, 0.0, 0.0)
+        });
+
+        match (scroller, pos) {
+            (Some(sc), Some((_, y))) if label.is_mapped() => {
+                let adj = sc.vadjustment();
+                let max = (adj.upper() - adj.page_size()).max(0.0);
+                adj.set_value((y - 80.0).max(0.0).min(max));
+
+                label.add_css_class("search-flash");
+                let l = label.clone();
+                glib::timeout_add_local_once(Duration::from_millis(1600), move || {
+                    l.remove_css_class("search-flash");
+                });
+            }
+            _ => {
+                // page may not be laid out yet (stack is still switching)
+                if tries > 0 {
+                    scroll_to_label(label, tries - 1);
+                }
+            }
+        }
+    });
+}
+
 fn build_right_panel(stack: &Stack) -> (GtkBox, ListBox) {
     let panel = GtkBox::new(Orientation::Vertical, 0);
     panel.add_css_class("right-panel");
     panel.set_size_request(220, -1);
-    // panel.set_margin_top(10);
-    // panel.set_margin_bottom(10);
     panel.set_margin_start(10);
-    // panel.set_margin_end(10);
     panel.set_hexpand(false);
 
     let search = SearchEntry::new();
     search.add_css_class("menu-search");
     search.set_placeholder_text(Some("Search in settings"));
 
+    // ── normal page menu ──
     let list = ListBox::new();
     list.set_selection_mode(gtk4::SelectionMode::Single);
     list.add_css_class("menu-list");
@@ -1241,23 +1297,6 @@ fn build_right_panel(stack: &Stack) -> (GtkBox, ListBox) {
         list.append(&row);
     }
 
-    let search_for_filter = search.clone();
-    list.set_filter_func(move |row| {
-        let query = search_for_filter.text().to_lowercase();
-        if query.is_empty() {
-            return true;
-        }
-        row.child()
-            .and_then(|w| w.downcast::<Label>().ok())
-            .map(|lbl| lbl.text().to_lowercase().contains(&query))
-            .unwrap_or(true)
-    });
-
-    let list_for_search = list.clone();
-    search.connect_search_changed(move |_| {
-        list_for_search.invalidate_filter();
-    });
-
     let stack_for_activate = stack.clone();
     list.connect_row_activated(move |_, row| {
         stack_for_activate.set_visible_child_name(&row.widget_name());
@@ -1270,8 +1309,129 @@ fn build_right_panel(stack: &Stack) -> (GtkBox, ListBox) {
         .child(&list)
         .build();
 
+    // ── search results (shown instead of the menu while there is a query) ──
+    let index = Rc::new(build_search_index(stack));
+    // row index -> (page id, label to scroll to)
+    let targets: Rc<RefCell<Vec<Option<(&'static str, Option<Label>)>>>> =
+        Rc::new(RefCell::new(Vec::new()));
+
+    let results = ListBox::new();
+    results.set_selection_mode(gtk4::SelectionMode::Single);
+    results.add_css_class("menu-list");
+
+    let results_scroller = ScrolledWindow::builder()
+        .vscrollbar_policy(gtk4::PolicyType::Automatic)
+        .hscrollbar_policy(gtk4::PolicyType::Never)
+        .vexpand(true)
+        .child(&results)
+        .visible(false)
+        .build();
+
+    let result_row = |title: &str, sub: &str| -> ListBoxRow {
+        let b = GtkBox::new(Orientation::Vertical, 2);
+        let t = Label::new(Some(title));
+        t.set_halign(Align::Start);
+        t.set_xalign(0.0);
+        t.set_wrap(true);
+        t.set_max_width_chars(24);
+        let p = Label::new(Some(sub));
+        p.add_css_class("frame-subtitle");
+        p.set_halign(Align::Start);
+        b.append(&t);
+        b.append(&p);
+        let row = ListBoxRow::new();
+        row.set_margin_bottom(5);
+        row.set_child(Some(&b));
+        row
+    };
+
+    let refill: Rc<dyn Fn(&str)> = {
+        let results = results.clone();
+        let results_scroller = results_scroller.clone();
+        let list_scroller = list_scroller.clone();
+        let index = index.clone();
+        let targets = targets.clone();
+        Rc::new(move |query: &str| {
+            let q = query.trim().to_lowercase();
+            list_scroller.set_visible(q.is_empty());
+            results_scroller.set_visible(!q.is_empty());
+
+            while let Some(r) = results.first_child() {
+                results.remove(&r);
+            }
+            let mut t = targets.borrow_mut();
+            t.clear();
+            if q.is_empty() {
+                return;
+            }
+
+            // page names first
+            for item in MENU_ITEMS {
+                if item.title.to_lowercase().contains(&q) {
+                    results.append(&result_row(item.title, "Page"));
+                    t.push(Some((item.id, None)));
+                }
+            }
+            // then every matching title / subtitle
+            let mut seen: Vec<(&str, String)> = Vec::new();
+            for hit in index.iter() {
+                let text = hit.label.text().to_string();
+                if !text.to_lowercase().contains(&q) {
+                    continue;
+                }
+                if seen.iter().any(|(p, s)| *p == hit.page && *s == text) {
+                    continue;
+                }
+                if t.len() >= 40 {
+                    break;
+                }
+                results.append(&result_row(&text, hit.page_title));
+                t.push(Some((hit.page, Some(hit.label.clone()))));
+                seen.push((hit.page, text));
+            }
+
+            if t.is_empty() {
+                let row = result_row("No results", "Try a different word");
+                row.set_activatable(false);
+                row.set_selectable(false);
+                results.append(&row);
+                t.push(None);
+            }
+        })
+    };
+
+    {
+        let refill = refill.clone();
+        search.connect_search_changed(move |s| refill(&s.text()));
+    }
+
+    let open_result: Rc<dyn Fn(usize)> = {
+        let stack = stack.clone();
+        let targets = targets.clone();
+        Rc::new(move |i: usize| {
+            let target = targets.borrow().get(i).cloned().flatten();
+            if let Some((page, label)) = target {
+                stack.set_visible_child_name(page);
+                if let Some(l) = label {
+                    scroll_to_label(l, 6);
+                }
+            }
+        })
+    };
+
+    {
+        let open_result = open_result.clone();
+        results.connect_row_activated(move |_, row| open_result(row.index() as usize));
+    }
+    {
+        // Enter in the search box opens the first result
+        let open_result = open_result.clone();
+        search.connect_activate(move |_| open_result(0));
+    }
+
     panel.append(&search);
     panel.append(&list_scroller);
+    panel.append(&results_scroller);
 
     (panel, list)
 }
@@ -1309,7 +1469,7 @@ fn build_ui(app: &Application, initial_tab: Option<String>) {
     );
     stack.add_titled(&shellset_page, Some("shellset"), "Shell");
 
-    let display_page = build_display_page();
+    let display_page = display::build_display_page();
     stack.add_titled(&display_page, Some("display"), "Display");
 
     let sound_page = build_sound_page();

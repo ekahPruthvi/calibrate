@@ -4,7 +4,10 @@ use gtk4::{
     Orientation, ScrolledWindow, Grid, Align, DrawingArea, gdk_pixbuf::Pixbuf,
 };
 use std::fs;
-use std::process::Command;
+use std::io::Read;
+use std::process::{Command, Stdio};
+use std::thread;
+use std::time::{Duration, Instant};
 
 fn format_bytes(bytes: u64) -> String {
     const UNITS: [&str; 5] = ["B", "KB", "MB", "GB", "TB"];
@@ -112,33 +115,67 @@ fn read_partitions() -> Vec<PartitionInfo> {
     partitions
 }
 
-fn read_module_versions() -> Vec<(String, String)> {
-    let path = "/var/lib/cynager/info.probe";
-    let mut versions = Vec::new();
+const MODULES: [&str; 6] = ["altDot", "capsule", "calibrate", "cynagectl", "octobacillus", "waul"];
 
-    if let Ok(contents) = fs::read_to_string(path) {
-        let mut in_ver_block = false;
-        for line in contents.lines() {
-            let trimmed = line.trim();
-            if trimmed == ":ver" {
-                in_ver_block = true;
-                continue;
+/// Runs `<name> -V` and returns the version, or "" if the program is missing,
+/// doesn't understand -V, or prints something that isn't "<name> <version>".
+fn module_version(name: &str) -> String {
+    let Ok(mut child) = Command::new(name)
+        .arg("-V")
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+    else {
+        return String::new();
+    };
+
+    // don't let a program that ignores -V hang the settings window
+    let start = Instant::now();
+    loop {
+        match child.try_wait() {
+            Ok(Some(_)) => break, // calibrate -V exits non-zero, so the status is ignored
+            Ok(None) if start.elapsed() < Duration::from_millis(1500) => {
+                thread::sleep(Duration::from_millis(10));
             }
-            if trimmed == ":end" {
-                if in_ver_block {
-                    break;
-                }
-                continue;
-            }
-            if in_ver_block && !trimmed.is_empty() {
-                if let Some((name, ver)) = trimmed.split_once(':') {
-                    versions.push((name.trim().to_string(), ver.trim().to_string()));
-                }
+            _ => {
+                let _ = child.kill();
+                let _ = child.wait();
+                return String::new();
             }
         }
     }
 
-    versions
+    let mut out = String::new();
+    if let Some(mut so) = child.stdout.take() {
+        let _ = so.read_to_string(&mut out);
+    }
+
+    // expected: "calibrate 1.2.10"
+    let line = out.lines().map(str::trim).find(|l| !l.is_empty()).unwrap_or("");
+    let mut parts = line.split_whitespace();
+    match (parts.next(), parts.next()) {
+        (Some(n), Some(v))
+            if n.eq_ignore_ascii_case(name)
+                && v.trim_start_matches('v').chars().next().map_or(false, |c| c.is_ascii_digit()) =>
+        {
+            v.to_string()
+        }
+        _ => String::new(),
+    }
+}
+
+fn read_module_versions() -> Vec<(String, String)> {
+    let handles: Vec<_> = MODULES
+        .iter()
+        .map(|m| thread::spawn(move || (m.to_string(), module_version(m))))
+        .collect();
+
+    handles
+        .into_iter()
+        .zip(MODULES.iter())
+        .map(|(h, m)| h.join().unwrap_or_else(|_| (m.to_string(), String::new())))
+        .collect()
 }
 
 fn read_os_pretty_name() -> String {
@@ -333,7 +370,7 @@ fn build_versions_card() -> GtkBox {
     let versions = read_module_versions();
 
     if versions.is_empty() {
-        let empty = Label::new(Some("No version data found at info.probe"));
+        let empty = Label::new(Some("No module versions found"));
         empty.add_css_class("shortcut-desc");
         empty.set_halign(Align::Start);
         empty.set_wrap(true);
@@ -357,7 +394,7 @@ fn build_versions_card() -> GtkBox {
             .build();
 
         for (module, version) in versions {
-            if module != "cynageOS" {
+            {
                 let name_lbl = Label::new(Some(&module));
                 name_lbl.add_css_class("row-label");
                 name_lbl.set_halign(Align::Start);
