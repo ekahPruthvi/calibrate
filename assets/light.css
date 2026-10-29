@@ -1,0 +1,213 @@
+/* Light mode overrides. Loaded on top of style.css when GNOME is not in dark mode. */
+
+window {
+    background-color: #f3f3f1;
+}
+
+.right-panel {
+    background-color: rgba(0, 0, 0, 0.05);
+    box-shadow: inset 8px 0px 8px -4px rgba(0, 0, 0, 0.06);
+}
+
+.menu-search {
+    border: 1px solid #00000028;
+    color: #2b2b30;
+}
+
+.menu-search:focus-within {
+    background-color: #ffffffcc;
+    border: 1px solid #00000038;
+}
+
+.menu-search image,
+.menu-search entry {
+    color: #3d3d3d;
+}
+
+.menu-list row {
+    color: #292929;
+}
+
+.menu-list row:selected {
+    background-color: #00000014;
+    color: #000000;
+}
+
+.menu-list row:hover {
+    background-color: #0000000a;
+}
+
+.page-header-bar {
+    border-top: 1px solid #00000014;
+}
+
+.page-title {
+    color: #1f1f2480;
+}
+
+.page-subtitle {
+    color: #5c5c68;
+}
+
+frame {
+    border: 2px solid #00000012;
+    background-color: #ffffffb3;
+}
+
+frame > label {
+    color: #5c5c68;
+}
+
+.shortcut-card {
+    border: 2px solid #00000012;
+    background-color: #ffffffb3;
+}
+
+.shortcut-card:hover {
+    background-color: #ffffff;
+}
+
+.shortcut-title {
+    color: #17171c;
+}
+
+.shortcut-desc {
+    color: #5c5c68;
+}
+
+.frame-title {
+    color: #17171c;
+}
+
+.frame-subtitle {
+    color: #17171c8c;
+}
+
+.row-label {
+    color: #2b2b30;
+}
+
+.row-caption {
+    color: #000000a6;
+}
+
+.moduleCos {
+    background-color: rgba(0, 0, 0, 0.05);
+}
+
+.moduleSub {
+    color: #0000008d;
+}
+
+stackswitcher button {
+    color: #2e3440;
+}
+
+stackswitcher button:checked {
+    background-color: #dcdcd8;
+    color: #1b1e26;
+}
+
+.wallpaperPrev {
+    background-color: #d9d9d9;
+}
+
+.capsule-dead {
+    background-color: #00000010;
+    color: #b3261e;
+}
+
+.ghostBtn {
+    border: 1px solid #00000021;
+}
+
+.widget-grid {
+    border: 1px solid rgba(0, 0, 0, 0.15);
+}
+
+.widget-cell-frame {
+    border-right: 1px solid rgba(0, 0, 0, 0.15);
+    border-bottom: 1px solid rgba(0, 0, 0, 0.15);
+}
+
+.widget-cell-frame.last-col { border-right: none; }
+.widget-cell-frame.last-row { border-bottom: none; }
+
+tooltip {
+    background-color: #fafafa;
+    border: 1px solid #00000024;
+    color: #1f1f24;
+}
+
+.popoverd {
+    background-image:
+        linear-gradient(rgb(250, 250, 250), rgb(250, 250, 250)),
+        linear-gradient(0deg, rgb(215, 215, 215), rgba(245, 245, 245, 0.686));
+}
+
+dropdown > button.toggle {
+    border: 1px solid #00000024;
+    color: #1f1f24;
+}
+
+dropdown > button.toggle:hover {
+    background-color: #0000000f;
+}
+
+dropdown > popover.menu {
+    background-color: #fffffff2;
+    border: 1px solid #00000024;
+    color: #1f1f24;
+}
+
+dropdown > popover.menu listview row:selected {
+    background-color: #00000014;
+}
+
+.shell-toast { background: rgba(250, 250, 250, 0.95); }
+.shell-toast-label { color: #1f1f24; }
+
+.search-flash { background-color: #8fb30040; }
+
+scale trough {
+    background-color: #00000026;
+}
+
+scale marks {
+    color: #5c5c68;
+}
+
+/* .drop-zone.drag-active {
+    background-color: alpha(@accent_color, 0.12);
+} */
+
+.card-icons {
+    padding: 5px;
+    background: linear-gradient(#fff2, #0001),  #11111162;
+    box-shadow:
+        1px 1px 2px -1px #fff inset,
+        0 2px 1px #00000010,
+        0 4px 2px #00000010,
+        0 8px 4px #00000010,
+        0 16px 8px #00000010,
+        0 32px 16px #00000010;
+    border-radius: 22px;
+    box-shadow: rgba(50, 50, 93, 0.25) 0px 6px 12px -2px, rgba(0, 0, 0, 0.3) 0px 3px 7px -3px;
+}
+
+.card-icons-smol {
+    padding: 3px;
+    background: linear-gradient(#fff2, #0001),  #222222;
+    box-shadow:
+        1px 1px 2px -1px #fff inset,
+        0 2px 1px #00000010,
+        0 4px 2px #00000010,
+        0 8px 4px #00000010,
+        0 16px 8px #00000010,
+        0 32px 16px #00000010;
+    color: rgb(252, 252, 252);
+    transition:
+        all 200ms cubic-bezier(0.4, 0, 0.2, 1);
+    border-radius: 11px;
+    box-shadow: rgba(50, 50, 93, 0.25) 0px 6px 12px -2px, rgba(0, 0, 0, 0.3) 0px 3px 7px -3px;
+}
