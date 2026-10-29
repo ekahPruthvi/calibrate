@@ -57,6 +57,49 @@ window {
     background-color: #ffffff0c;
 }
 
+.sub-list {
+    background-color: rgba(255, 255, 255, 0.034);
+    border-radius: 25px;
+}
+
+.sub-list row {
+    all: unset;
+    padding: 15px;
+    color: #ffffffd2;
+    background-color: transparent;
+    border: 1px solid transparent;
+
+    background-image: linear-gradient(rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0.08));
+    background-repeat: no-repeat;
+    background-position: center bottom;
+    background-size: calc(100% - 10px) 1px;
+}
+
+.sub-list row:hover {
+    background-color: #ffffff0c;
+}
+
+.sub-list row:selected {
+    background-color: #ffffff04;
+    color: #ffffff;
+}
+
+.sub-list row:first-child {
+    border-top-left-radius: 25px;
+    border-top-right-radius: 25px;
+}
+
+.sub-list row:last-child {
+    border-bottom-left-radius: 25px;
+    border-bottom-right-radius: 25px;
+    background-image: none; /* no separator under the last row */
+}
+
+.sub-list row:only-child {
+    border-radius: 25px;
+    background-image: none;
+}
+
 .page-header-bar {
     padding: 10px;
     border-top: 1px solid #ffffff17;

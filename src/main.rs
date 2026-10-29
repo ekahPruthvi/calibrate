@@ -134,11 +134,6 @@ fn system_is_dark() -> bool {
 fn apply_theme(base: &CssProvider, light: &CssProvider) {
     let dark = system_is_dark();
 
-    if let Some(gtk_settings) = gtk4::Settings::default() {
-        gtk_settings.set_gtk_application_prefer_dark_theme(dark);
-    }
-
-    // style.css is always loaded; light.css only has content in light mode
     base.load_from_data(BASE_CSS);
     light.load_from_data(if dark { "" } else { LIGHT_CSS });
 }

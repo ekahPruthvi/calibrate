@@ -243,7 +243,7 @@ fn build_device_card(kind: Kind, toast: &Toast) -> (Frame, Rc<dyn Fn()>) {
     // device names
     let list = ListBox::new();
     list.set_selection_mode(gtk4::SelectionMode::Single);
-    list.add_css_class("menu-list");
+    list.add_css_class("sub-list");
     list.set_margin_start(15);
     list.set_margin_end(15);
 
