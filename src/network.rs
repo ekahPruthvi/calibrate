@@ -729,6 +729,193 @@ fn build_wifi_card(toast: &Toast, switch: &Switch) -> Frame {
     frame
 }
 
+// ───────────────────────────── ethernet card ─────────────────────────────
+
+#[derive(Clone)]
+struct EthDev {
+    device: String,
+    /// raw NetworkManager state: connected, connecting (...), disconnected, unavailable, ...
+    state: String,
+    connection: String,
+    ip: Option<String>,
+}
+
+impl EthDev {
+    fn is_connected(&self) -> bool {
+        self.state.starts_with("connected")
+    }
+    fn is_connecting(&self) -> bool {
+        self.state.starts_with("connecting") || self.state.starts_with("disconnecting")
+    }
+    /// no cable / carrier
+    fn is_unavailable(&self) -> bool {
+        self.state.starts_with("unavailable")
+    }
+}
+
+fn ethernet_devices() -> Vec<EthDev> {
+    let out = nmcli(&["-t", "-f", "DEVICE,TYPE,STATE,CONNECTION", "device", "status"]).unwrap_or_default();
+    let mut devs = Vec::new();
+    for line in out.lines() {
+        let f = split_terse(line);
+        if f.len() < 4 || f[1] != "ethernet" {
+            continue;
+        }
+        let mut dev = EthDev {
+            device: f[0].clone(),
+            state: f[2].clone(),
+            connection: f[3].clone(),
+            ip: None,
+        };
+        if dev.is_connected() {
+            dev.ip = nmcli(&["-g", "IP4.ADDRESS", "device", "show", &dev.device])
+                .unwrap_or_default()
+                .lines()
+                .flat_map(|l| l.split(" | "))
+                .map(|s| s.trim().to_string())
+                .find(|s| !s.is_empty() && s != "--");
+        }
+        devs.push(dev);
+    }
+    devs.sort_by(|a, b| b.is_connected().cmp(&a.is_connected()).then(a.device.cmp(&b.device)));
+    devs
+}
+
+fn build_eth_row(dev: &EthDev) -> ListBoxRow {
+    let row = GtkBox::new(Orientation::Horizontal, 10);
+    row.set_margin_top(6);
+
+    let icon = Image::from_icon_name("network-wired-symbolic");
+    icon.set_pixel_size(20);
+    icon.set_valign(Align::Center);
+    icon.add_css_class("card-icons-smol");
+    row.append(&icon);
+
+    let text = GtkBox::new(Orientation::Vertical, 2);
+    text.set_hexpand(true);
+    text.set_valign(Align::Center);
+
+    let name = Label::new(Some(&dev.device));
+    name.set_halign(Align::Start);
+    name.set_xalign(0.0);
+    name.set_ellipsize(gtk4::pango::EllipsizeMode::End);
+    text.append(&name);
+
+    let caption = if dev.is_connected() {
+        let mut parts = vec!["Connected".to_string()];
+        if !dev.connection.is_empty() && dev.connection != "--" {
+            parts.push(dev.connection.clone());
+        }
+        if let Some(ip) = &dev.ip {
+            parts.push(ip.clone());
+        }
+        parts.join(" · ")
+    } else if dev.is_connecting() {
+        "Working…".to_string()
+    } else if dev.is_unavailable() {
+        "Cable unplugged".to_string()
+    } else {
+        "Not connected".to_string()
+    };
+    let cap = Label::new(Some(&caption));
+    cap.add_css_class("row-caption");
+    cap.set_halign(Align::Start);
+    cap.set_xalign(0.0);
+    text.append(&cap);
+    row.append(&text);
+
+    ListBoxRow::builder().child(&row).activatable(false).selectable(false).build()
+}
+
+/// How often the card re-reads the cable / link state while it is on screen.
+const ETH_POLL_SECS: u32 = 4;
+
+fn build_eth_card() -> Frame {
+    let frame = Frame::new(None);
+
+    let list = ListBox::new();
+    list.set_selection_mode(gtk4::SelectionMode::None);
+    list.add_css_class("sub-list");
+    list.set_margin_top(10);
+    list.set_margin_start(15);
+    list.set_margin_end(15);
+    list.set_margin_bottom(20);
+    frame.set_child(Some(&list));
+
+    let busy = Rc::new(Cell::new(false));
+    let last: Rc<RefCell<Option<String>>> = Rc::new(RefCell::new(None));
+
+    let refresh: Rc<dyn Fn()> = {
+        let list = list.clone();
+        let busy = busy.clone();
+        let last = last.clone();
+        Rc::new(move || {
+            if busy.replace(true) {
+                return; // previous read still running
+            }
+            let list = list.clone();
+            let busy = busy.clone();
+            let last = last.clone();
+            glib::spawn_future_local(async move {
+                let res = gio::spawn_blocking(ethernet_devices).await;
+                busy.set(false);
+                let Ok(devs) = res else {
+                    return;
+                };
+
+                // only rebuild the rows when something actually changed
+                let sig = devs
+                    .iter()
+                    .map(|d| format!("{}|{}|{}|{:?}", d.device, d.state, d.connection, d.ip))
+                    .collect::<Vec<_>>()
+                    .join("\n");
+                if last.borrow().as_deref() == Some(sig.as_str()) {
+                    return;
+                }
+                *last.borrow_mut() = Some(sig);
+
+                while let Some(r) = list.first_child() {
+                    list.remove(&r);
+                }
+
+                if devs.is_empty() {
+                    let empty = Label::new(Some("No Ethernet adapter found"));
+                    empty.add_css_class("row-caption");
+                    empty.set_margin_top(10);
+                    empty.set_margin_bottom(10);
+                    list.append(&ListBoxRow::builder().child(&empty).activatable(false).selectable(false).build());
+                }
+
+                for d in &devs {
+                    list.append(&build_eth_row(d));
+                }
+            });
+        })
+    };
+
+    // refresh immediately whenever the page is shown
+    {
+        let refresh = refresh.clone();
+        frame.connect_map(move |_| refresh());
+    }
+
+    // light poll: only does work while the card is visible, stops once it is destroyed
+    {
+        let weak = frame.downgrade();
+        glib::timeout_add_seconds_local(ETH_POLL_SECS, move || match weak.upgrade() {
+            Some(f) => {
+                if f.is_mapped() {
+                    refresh();
+                }
+                glib::ControlFlow::Continue
+            }
+            None => glib::ControlFlow::Break,
+        });
+    }
+
+    frame
+}
+
 // ───────────────────────────── add networks card ─────────────────────────────
 
 /// A small non-interactive "ghost" pill used in the illustration.
@@ -886,6 +1073,24 @@ pub fn build_net_page() -> Overlay {
     content.append(&known_title);
     // wifi card
     content.append(&build_wifi_card(&toast, &wifi_switch));
+
+    // ethernet: title + subtitle before the card
+    let eth_head = GtkBox::new(Orientation::Vertical, 2);
+    eth_head.set_margin_top(20);
+    eth_head.set_margin_start(20);
+
+    let eth_title = Label::new(Some("Ethernet"));
+    eth_title.add_css_class("frame-title");
+    eth_title.set_halign(Align::Start);
+
+    let eth_sub = Label::new(Some("Wired connections and cable status."));
+    eth_sub.add_css_class("frame-subtitle");
+    eth_sub.set_halign(Align::Start);
+
+    eth_head.append(&eth_title);
+    eth_head.append(&eth_sub);
+    content.append(&eth_head);
+    content.append(&build_eth_card());
     
 
     // add networks card

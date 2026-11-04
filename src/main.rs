@@ -690,6 +690,8 @@ fn build_ui(app: &Application, initial_tab: Option<String>) {
 
     window.connect_map(|_| println!("ready"));
 
+    // similar to net and bluetooth put heading outside the card for all pages
+
     let stack = Stack::new();
     stack.set_transition_type(gtk4::StackTransitionType::SlideUpDown);
     stack.set_transition_duration(300);
