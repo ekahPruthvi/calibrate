@@ -53,9 +53,6 @@ window {
     color: #ffffff;
 }
 
-.menu-list row:hover {
-    background-color: #ffffff0c;
-}
 
 .sub-list {
     background-color: rgba(255, 255, 255, 0);
@@ -65,7 +62,7 @@ window {
 .sub-list row {
     all: unset;
     padding: 15px;
-    color: #ffffffd2;
+    color: #ffffff91;
     background-color: transparent;
     border: 1px solid transparent;
     border-radius: 25px;
@@ -75,18 +72,6 @@ window {
     background-size: calc(100% - 10px) 1px;
 }
 
-.sub-list row:hover {
-    background-color: #ffffff0c;
-    background-image: none;
-}
-
-.sub-list row:hover:selected {
-    background-color: #ffffff00;
-    background-image: linear-gradient(rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0.08));
-    background-repeat: no-repeat;
-    background-position: center bottom;
-    background-size: calc(100% - 10px) 1px;
-}
 
 .sub-list row:selected {
     background-color: #ffffff00;
@@ -432,6 +417,12 @@ stackswitcher button:active {
 
 .destructive-action:active {
     transform: scale(0.9);
+}
+
+.sub-btn-small {
+    min-width: 100px;
+    padding: 5px;
+    border-radius: 5px;
 }
 
 .drop-zone {

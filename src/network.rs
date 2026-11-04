@@ -262,6 +262,7 @@ fn open_settings(parent: Option<Window>, net: KnownNet, toast: Toast, on_changed
     pw_val.set_wrap(true);
     let pw_btn = Button::with_label("Show");
     pw_btn.add_css_class("sub-btn");
+    pw_btn.add_css_class("sub-btn-small");
     pw_btn.set_cursor_from_name(Some("pointer"));
     pw_row.append(&pw_val);
     pw_row.append(&pw_btn);
@@ -326,6 +327,7 @@ fn open_settings(parent: Option<Window>, net: KnownNet, toast: Toast, on_changed
 
     let dns_apply = Button::with_label("Apply");
     dns_apply.add_css_class("sub-btn");
+    dns_apply.add_css_class("sub-btn-small");
     dns_apply.set_halign(Align::End);
     dns_apply.set_cursor_from_name(Some("pointer"));
 
@@ -495,7 +497,7 @@ fn build_net_row(net: &KnownNet, toast: &Toast, trigger: Rc<dyn Fn()>) -> ListBo
     row.append(&name);
 
     let connect = Button::with_label(if net.active { "Disconnect" } else { "Connect" });
-    connect.add_css_class(if net.active { "destructive-action" } else { "sub-btn" });
+    connect.set_css_classes(if net.active { &["destructive-action", "sub-btn-small"] } else { &["sub-btn", "sub-btn-small"] });
     connect.set_valign(Align::Center);
     connect.set_cursor_from_name(Some("pointer"));
 
@@ -555,7 +557,9 @@ fn build_net_row(net: &KnownNet, toast: &Toast, trigger: Rc<dyn Fn()>) -> ListBo
     ListBoxRow::builder().child(&row).activatable(false).selectable(false).build()
 }
 
-fn build_wifi_card(toast: &Toast) -> Frame {
+/// Header card with the Wi-Fi switch. The switch is wired up in `build_wifi_card`,
+/// which owns the refresh logic.
+fn build_wifi_head() -> (Frame, Switch) {
     let frame = Frame::new(None);
     let outer = GtkBox::new(Orientation::Vertical, 5);
 
@@ -572,6 +576,7 @@ fn build_wifi_card(toast: &Toast) -> Frame {
     title.set_halign(Align::Start);
     let sub = Label::new(Some("Configure and inspect wireless networking."));
     sub.add_css_class("frame-subtitle");
+    sub.set_margin_bottom(20);
     sub.set_halign(Align::Start);
     text_box.append(&title);
     text_box.append(&sub);
@@ -583,17 +588,21 @@ fn build_wifi_card(toast: &Toast) -> Frame {
     header.append(&text_box);
     header.append(&switch);
 
-    // known networks
-    let known_title = Label::new(Some("Known Networks"));
-    known_title.add_css_class("frame-title");
-    known_title.set_halign(Align::Start);
-    known_title.set_margin_start(20);
-    known_title.set_margin_top(10);
+    outer.append(&header);
+    frame.set_child(Some(&outer));
+
+    (frame, switch)
+}
+
+fn build_wifi_card(toast: &Toast, switch: &Switch) -> Frame {
+    let frame = Frame::new(None);
+    let outer = GtkBox::new(Orientation::Vertical, 5);
 
     let hint = Label::new(Some("Wi-Fi is turned off."));
     hint.add_css_class("row-caption");
-    hint.set_halign(Align::Start);
+    hint.set_halign(Align::Center);
     hint.set_margin_start(20);
+    hint.set_margin_top(20);
     hint.set_visible(false);
 
     let list = ListBox::new();
@@ -611,8 +620,6 @@ fn build_wifi_card(toast: &Toast) -> Frame {
         .child(&list)
         .build();
 
-    outer.append(&header);
-    outer.append(&known_title);
     outer.append(&hint);
     outer.append(&listscroller);
     frame.set_child(Some(&outer));
@@ -633,15 +640,15 @@ fn build_wifi_card(toast: &Toast) -> Frame {
 
     let refresh: Rc<dyn Fn()> = {
         let list = list.clone();
-        let switch = switch.clone();
         let hint = hint.clone();
         let updating = updating.clone();
         let toast = toast.clone();
         let trigger = trigger.clone();
+        let switch = switch.downgrade(); // weak: the switch handler holds `refresh`
         Rc::new(move || {
             let list = list.clone();
-            let switch = switch.clone();
             let hint = hint.clone();
+            let switch = switch.clone();
             let updating = updating.clone();
             let toast = toast.clone();
             let trigger = trigger.clone();
@@ -651,9 +658,12 @@ fn build_wifi_card(toast: &Toast) -> Frame {
                     return;
                 };
 
-                updating.set(true);
-                switch.set_active(enabled);
-                updating.set(false);
+                // reflect the real radio state without re-triggering the handler
+                if let Some(sw) = switch.upgrade() {
+                    updating.set(true);
+                    sw.set_active(enabled);
+                    updating.set(false);
+                }
 
                 hint.set_visible(!enabled);
                 list.set_sensitive(enabled);
@@ -678,28 +688,38 @@ fn build_wifi_card(toast: &Toast) -> Frame {
     };
     *slot.borrow_mut() = Some(refresh.clone());
 
-    // toggle wifi radio
+    // toggle the wifi radio
     {
         let toast = toast.clone();
-        let trigger = trigger.clone();
         let updating = updating.clone();
+        let refresh = refresh.clone();
         switch.connect_active_notify(move |s| {
             if updating.get() {
-                return;
+                return; // programmatic change from refresh()
             }
             let on = s.is_active();
+            s.set_sensitive(false); // no overlapping toggles while nmcli runs
+            let s = s.clone();
             let toast = toast.clone();
-            let trigger = trigger.clone();
+            let refresh = refresh.clone();
             glib::spawn_future_local(async move {
                 match gio::spawn_blocking(move || set_wifi_enabled(on)).await {
                     Ok(Ok(())) => toast.show(if on { "Wi-Fi turned on" } else { "Wi-Fi turned off" }),
                     Ok(Err(e)) => toast.show(&format!("Failed: {e}")),
                     Err(_) => {}
                 }
-                trigger();
+                s.set_sensitive(true);
+                // re-read the real state (also reverts the switch if nmcli failed)
+                refresh();
+                if on {
+                    // give NetworkManager a moment to autoconnect, then update again
+                    let refresh = refresh.clone();
+                    glib::timeout_add_local_once(Duration::from_secs(2), move || refresh());
+                }
             });
         });
     }
+
 
     {
         let refresh = refresh.clone();
@@ -855,8 +875,18 @@ pub fn build_net_page() -> Overlay {
 
     let toast = Toast::new();
 
+    let (wifi_head, wifi_switch) = build_wifi_head();
+    content.append(&wifi_head);
+
+    let known_title = Label::new(Some("Known Networks"));
+    known_title.add_css_class("frame-title");
+    known_title.set_halign(Align::Start);
+    known_title.set_margin_start(20);
+    known_title.set_margin_top(20);
+    content.append(&known_title);
     // wifi card
-    content.append(&build_wifi_card(&toast));
+    content.append(&build_wifi_card(&toast, &wifi_switch));
+    
 
     // add networks card
     content.append(&build_add_network_card());

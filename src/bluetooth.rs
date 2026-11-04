@@ -431,6 +431,7 @@ fn build_device_row(dev: &BtDevice, toast: &Toast, trigger: Rc<dyn Fn()>) -> Lis
 
     let connect = Button::with_label(if dev.connected { "Disconnect" } else { "Connect" });
     connect.add_css_class(if dev.connected { "destructive-action" } else { "sub-btn" });
+    connect.add_css_class("sub-btn-small");
     connect.set_valign(Align::Center);
     connect.set_cursor_from_name(Some("pointer"));
 
@@ -490,12 +491,12 @@ fn build_device_row(dev: &BtDevice, toast: &Toast, trigger: Rc<dyn Fn()>) -> Lis
     ListBoxRow::builder().child(&row).activatable(false).selectable(false).build()
 }
 
-/// Returns the card and a function that reloads its device list.
-fn build_bt_card(toast: &Toast) -> (Frame, Rc<dyn Fn()>) {
+/// Header card with the Bluetooth switch. The switch is wired up in `build_bt_card`,
+/// which owns the refresh logic.
+fn build_bt_header() -> (Frame, Switch) {
     let frame = Frame::new(None);
     let outer = GtkBox::new(Orientation::Vertical, 5);
 
-    // header: title + toggle
     let header = GtkBox::new(Orientation::Horizontal, 12);
     header.set_margin_start(20);
     header.set_margin_end(20);
@@ -507,6 +508,7 @@ fn build_bt_card(toast: &Toast) -> (Frame, Rc<dyn Fn()>) {
     title.add_css_class("frame-title");
     title.set_halign(Align::Start);
     let sub = Label::new(Some("Manage paired devices and Bluetooth visibility."));
+    sub.set_margin_bottom(20);
     sub.add_css_class("frame-subtitle");
     sub.set_halign(Align::Start);
     text_box.append(&title);
@@ -519,15 +521,22 @@ fn build_bt_card(toast: &Toast) -> (Frame, Rc<dyn Fn()>) {
     header.append(&text_box);
     header.append(&switch);
 
-    let paired_title = Label::new(Some("Paired Devices"));
-    paired_title.add_css_class("frame-title");
-    paired_title.set_halign(Align::Start);
-    paired_title.set_margin_start(20);
-    paired_title.set_margin_top(10);
+
+    outer.append(&header);
+    frame.set_child(Some(&outer));
+
+    (frame, switch)
+}
+
+/// Returns the card and a function that reloads its device list.
+fn build_bt_card(toast: &Toast, switch: &Switch) -> (Frame, Rc<dyn Fn()>) {
+    let frame = Frame::new(None);
+    let outer = GtkBox::new(Orientation::Vertical, 5);
 
     let hint = Label::new(Some("Bluetooth is turned off."));
     hint.add_css_class("row-caption");
-    hint.set_halign(Align::Start);
+    hint.set_halign(Align::Center);
+    hint.set_margin_top(20);
     hint.set_margin_start(20);
     hint.set_visible(false);
 
@@ -542,12 +551,11 @@ fn build_bt_card(toast: &Toast) -> (Frame, Rc<dyn Fn()>) {
         .hscrollbar_policy(gtk4::PolicyType::Never)
         .vexpand(true)
         .hexpand(true)
-        .height_request(300)
+        .max_content_height(300)
+        .min_content_height(80)
         .child(&list)
         .build();
 
-    outer.append(&header);
-    outer.append(&paired_title);
     outer.append(&hint);
     outer.append(&listscroller);
     frame.set_child(Some(&outer));
@@ -568,15 +576,15 @@ fn build_bt_card(toast: &Toast) -> (Frame, Rc<dyn Fn()>) {
 
     let refresh: Rc<dyn Fn()> = {
         let list = list.clone();
-        let switch = switch.clone();
         let hint = hint.clone();
         let updating = updating.clone();
         let toast = toast.clone();
         let trigger = trigger.clone();
+        let switch = switch.downgrade(); // weak: the switch handler holds `refresh`
         Rc::new(move || {
             let list = list.clone();
-            let switch = switch.clone();
             let hint = hint.clone();
+            let switch = switch.clone();
             let updating = updating.clone();
             let toast = toast.clone();
             let trigger = trigger.clone();
@@ -591,15 +599,18 @@ fn build_bt_card(toast: &Toast) -> (Frame, Rc<dyn Fn()>) {
                     return;
                 };
 
-                let (enabled, available) = match &state {
+                let (enabled, _) = match &state {
                     Ok(p) => (*p, true),
                     Err(_) => (false, false),
                 };
 
-                updating.set(true);
-                switch.set_active(enabled);
-                updating.set(false);
-                switch.set_sensitive(available);
+                // reflect the real adapter state without re-triggering the handler
+                if let Some(sw) = switch.upgrade() {
+                    updating.set(true);
+                    sw.set_active(enabled);
+                    updating.set(false);
+                    sw.set_sensitive(state.is_ok()); // no adapter -> nothing to toggle
+                }
 
                 hint.set_text(match &state {
                     Err(e) => e.as_str(),
@@ -614,6 +625,8 @@ fn build_bt_card(toast: &Toast) -> (Frame, Rc<dyn Fn()>) {
 
                 if enabled && devs.is_empty() {
                     let empty = Label::new(Some("No paired devices"));
+                    empty.set_vexpand(true);
+                    empty.set_valign(Align::Center);
                     empty.add_css_class("row-caption");
                     empty.set_margin_top(10);
                     empty.set_margin_bottom(10);
@@ -631,22 +644,31 @@ fn build_bt_card(toast: &Toast) -> (Frame, Rc<dyn Fn()>) {
     // toggle adapter power
     {
         let toast = toast.clone();
-        let trigger = trigger.clone();
         let updating = updating.clone();
+        let refresh = refresh.clone();
         switch.connect_active_notify(move |s| {
             if updating.get() {
-                return;
+                return; // programmatic change from refresh()
             }
             let on = s.is_active();
+            s.set_sensitive(false); // no overlapping toggles while bluetoothctl runs
+            let s = s.clone();
             let toast = toast.clone();
-            let trigger = trigger.clone();
+            let refresh = refresh.clone();
             glib::spawn_future_local(async move {
                 match gio::spawn_blocking(move || set_powered(on)).await {
                     Ok(Ok(())) => toast.show(if on { "Bluetooth turned on" } else { "Bluetooth turned off" }),
                     Ok(Err(e)) => toast.show(&format!("Failed: {e}")),
                     Err(_) => {}
                 }
-                trigger();
+                s.set_sensitive(true);
+                // re-read the real state (also reverts the switch if the command failed)
+                refresh();
+                if on {
+                    // give known devices a moment to auto-reconnect, then update again
+                    let refresh = refresh.clone();
+                    glib::timeout_add_local_once(Duration::from_secs(2), move || refresh());
+                }
             });
         });
     }
@@ -674,6 +696,7 @@ fn build_nearby_row(dev: &Nearby, toast: &Toast, on_paired: Rc<dyn Fn()>) -> Lis
 
     let pair = Button::with_label("Pair");
     pair.add_css_class("sub-btn");
+    pair.add_css_class("sub-btn-small");
     pair.set_valign(Align::Center);
     pair.set_cursor_from_name(Some("pointer"));
     row.append(&pair);
@@ -718,11 +741,37 @@ fn build_nearby_row(dev: &Nearby, toast: &Toast, on_paired: Rc<dyn Fn()>) -> Lis
 }
 
 fn build_add_device_card(toast: &Toast, on_paired: Rc<dyn Fn()>) -> Frame {
-    let (frame, inner) = section(
-        "Add devices",
+    let frame = Frame::new(None);
+    let inner = GtkBox::new(Orientation::Vertical, 8);
+    inner.set_margin_top(16);
+    inner.set_margin_bottom(16);
+    inner.set_margin_start(20);
+    inner.set_margin_end(20);
+    frame.set_child(Some(&inner));
+
+    // title + subtitle on the left, Scan button on the right end of the same row
+    let head = GtkBox::new(Orientation::Horizontal, 12);
+
+    let text_box = GtkBox::new(Orientation::Vertical, 2);
+    text_box.set_hexpand(true);
+    text_box.set_valign(Align::Center);
+
+    let t = Label::new(Some("Add devices"));
+    t.add_css_class("frame-title");
+    t.set_halign(Align::Start);
+
+    let sub = Label::new(Some(
         "Put your device in pairing mode, then press Scan. Devices that are not paired yet \
          will show up below.",
-    );
+    ));
+    sub.add_css_class("frame-subtitle");
+    sub.set_halign(Align::Start);
+    sub.set_xalign(0.0);
+    sub.set_wrap(true);
+
+    text_box.append(&t);
+    text_box.append(&sub);
+    head.append(&text_box);
 
     let status = Label::new(None);
     status.add_css_class("row-caption");
@@ -734,13 +783,15 @@ fn build_add_device_card(toast: &Toast, on_paired: Rc<dyn Fn()>) -> Frame {
     let scan = Button::with_label("Scan");
     scan.add_css_class("sub-btn");
     scan.set_halign(Align::End);
+    scan.set_valign(Align::Center);
     scan.set_cursor_from_name(Some("pointer"));
+    head.append(&scan);
+    inner.append(&head);
 
     let list = ListBox::new();
     list.set_selection_mode(gtk4::SelectionMode::None);
     list.add_css_class("sub-list");
 
-    inner.append(&scan);
     inner.append(&status);
     inner.append(&list);
 
@@ -821,8 +872,17 @@ pub fn build_bt_page() -> Overlay {
 
     let toast = Toast::new();
 
+    let (bt_head, bt_switch) = build_bt_header();
+    content.append(&bt_head);
     // paired devices card
-    let (bt_card, refresh) = build_bt_card(&toast);
+    let paired_title = Label::new(Some("Paired Devices"));
+    paired_title.add_css_class("frame-title");
+    paired_title.set_halign(Align::Start);
+    paired_title.set_margin_start(20);
+    paired_title.set_margin_top(20);
+    content.append(&paired_title);
+
+    let (bt_card, refresh) = build_bt_card(&toast, &bt_switch);
     content.append(&bt_card);
 
     // add devices card
