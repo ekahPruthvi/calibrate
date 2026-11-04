@@ -58,7 +58,7 @@ window {
 }
 
 .sub-list {
-    background-color: rgba(255, 255, 255, 0.034);
+    background-color: rgba(255, 255, 255, 0);
     border-radius: 25px;
 }
 
@@ -68,7 +68,7 @@ window {
     color: #ffffffd2;
     background-color: transparent;
     border: 1px solid transparent;
-
+    border-radius: 25px;
     background-image: linear-gradient(rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0.08));
     background-repeat: no-repeat;
     background-position: center bottom;
@@ -77,21 +77,26 @@ window {
 
 .sub-list row:hover {
     background-color: #ffffff0c;
+    background-image: none;
+}
+
+.sub-list row:hover:selected {
+    background-color: #ffffff00;
+    background-image: linear-gradient(rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0.08));
+    background-repeat: no-repeat;
+    background-position: center bottom;
+    background-size: calc(100% - 10px) 1px;
 }
 
 .sub-list row:selected {
-    background-color: #ffffff04;
+    background-color: #ffffff00;
     color: #ffffff;
 }
 
 .sub-list row:first-child {
-    border-top-left-radius: 25px;
-    border-top-right-radius: 25px;
 }
 
 .sub-list row:last-child {
-    border-bottom-left-radius: 25px;
-    border-bottom-right-radius: 25px;
     background-image: none; /* no separator under the last row */
 }
 
@@ -202,6 +207,30 @@ frame > label {
     font-size: 11px;
     font-weight: 900;
 }
+
+scrollbar,
+scrollbar > range > trough,
+scrollbar > range > trough > slider {
+    opacity: 0;
+    min-width: 0;
+    min-height: 0;
+    margin: 0;
+    padding: 0;
+    border: none;
+    background: none;
+    box-shadow: none;
+    outline: none;
+}
+
+.ghost-box      { background: alpha(#ffffff, 0.25); border-radius: 18px; padding: 16px; }
+.ghost-capsule  { background: #1c1c1c; border-radius: 16px; padding: 6px 16px; }
+.ghost-clock    { font-weight: 600; background-color: rgba(255, 255, 255, 0.08); border-radius: 100px; padding: 5px;}
+.ghost-highlight{ border: 1px dashed #e5173f; border-radius: 999px; padding: 3px 10px; }
+.ghost-hint     { font-size: 11px; color: #fee9ed; }
+.ghost-panel    { background: transparent; }
+.ghost-pill     { background: #1c1c1c; border-radius: 999px; padding: 8px 14px; }
+.ghost-pill-title   { font-weight: 600; }
+.ghost-pill-caption { font-size: 10px; opacity: 0.7; }
 
 scrollbar {
     background-color: transparent;

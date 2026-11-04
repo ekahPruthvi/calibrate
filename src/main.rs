@@ -25,6 +25,7 @@ mod shellsettings;
 mod display;
 mod sound;
 mod network;
+mod bluetooth;
 
 struct MenuItem {
     id: &'static str,
@@ -52,8 +53,8 @@ const MENU_ITEMS: &[MenuItem] = &[
 fn menu_icon(id: &str) -> &'static str {
     match id {
         "home" => "go-home-symbolic",
-        "appearance" => "gnumeric-brush",
-        "shellset" => "automated-tasks",
+        "appearance" => "edit-clear-all-symbolic",
+        "shellset" => "detach-symbolic",
         "display" => "video-display-symbolic",
         "sound" => "audio-speakers-symbolic",
         "net" => "network-wireless-symbolic",
@@ -437,7 +438,7 @@ fn build_search_index(stack: &Stack) -> Vec<SearchHit> {
         collect_labels(&page, &mut labels);
 
         // sound / network build their rows with `labeled_row` (row-label + row-caption)
-        let rows_too = matches!(item.id, "sound" | "net");
+        let rows_too = matches!(item.id, "sound" | "net" | "blue");
         for l in labels {
             let is_title = l.has_css_class("frame-title")
                 || l.has_css_class("frame-subtitle")
@@ -715,7 +716,7 @@ fn build_ui(app: &Application, initial_tab: Option<String>) {
     let network_page = network::build_net_page();
     stack.add_titled(&network_page, Some("net"), "Network");
 
-    let blue_page = build_placeholder_page("Bluetooth", "Bluetooth settings are coming soon.");
+    let blue_page = bluetooth::build_bt_page();
     stack.add_titled(&blue_page, Some("blue"), "Bluetooth");
 
     let storage_page = build_placeholder_page("Storage", "Detailed storage settings are coming soon.");

@@ -494,22 +494,20 @@ fn build_net_row(net: &KnownNet, toast: &Toast, trigger: Rc<dyn Fn()>) -> ListBo
 
     row.append(&name);
 
-    if net.active {
-        let badge = Label::new(Some("Connected"));
-        badge.add_css_class("row-caption");
-        row.append(&badge);
-    }
-
     let connect = Button::with_label(if net.active { "Disconnect" } else { "Connect" });
-    // connect.add_css_class("sub-btn");
+    connect.add_css_class(if net.active { "destructive-action" } else { "sub-btn" });
     connect.set_valign(Align::Center);
     connect.set_cursor_from_name(Some("pointer"));
 
-    let settings = Button::from_icon_name("emblem-system-symbolic");
-    // settings.add_css_class("sub-btn");
-    settings.set_valign(Align::Center);
-    settings.set_tooltip_text(Some("Network settings"));
-    settings.set_cursor_from_name(Some("pointer"));
+    let settings = Button::new();
+    settings.set_child(Some(
+        &Image::builder()
+            .file("/var/lib/cynager/icons/cog.svg")
+            .pixel_size(22)
+            .build()
+    ));
+    settings.add_css_class("flat");
+    settings.add_css_class("ghost-gear");
 
     row.append(&connect);
     row.append(&settings);
@@ -605,10 +603,18 @@ fn build_wifi_card(toast: &Toast) -> Frame {
     list.set_margin_end(15);
     list.set_margin_bottom(20);
 
+    let listscroller = ScrolledWindow::builder()
+        .hscrollbar_policy(gtk4::PolicyType::Never)
+        .vexpand(true)
+        .hexpand(true)
+        .height_request(400)
+        .child(&list)
+        .build();
+
     outer.append(&header);
     outer.append(&known_title);
     outer.append(&hint);
-    outer.append(&list);
+    outer.append(&listscroller);
     frame.set_child(Some(&outer));
 
     let updating = Rc::new(Cell::new(false));
@@ -703,6 +709,120 @@ fn build_wifi_card(toast: &Toast) -> Frame {
     frame
 }
 
+// ───────────────────────────── add networks card ─────────────────────────────
+
+/// A small non-interactive "ghost" pill used in the illustration.
+fn ghost_pill(icon: Option<&str>, title: Option<&str>, caption: Option<&str>) -> GtkBox {
+    let pill = GtkBox::new(Orientation::Horizontal, 8);
+    pill.add_css_class("ghost-pill");
+    pill.set_valign(Align::Center);
+    pill.set_can_target(false);
+
+    if let Some(icon) = icon {
+        let img = Image::from_icon_name(icon);
+        img.set_pixel_size(18);
+        pill.append(&img);
+    }
+    if title.is_some() || caption.is_some() {
+        let col = GtkBox::new(Orientation::Vertical, 0);
+        if let Some(t) = title {
+            let l = Label::new(Some(t));
+            l.add_css_class("ghost-pill-title");
+            l.set_halign(Align::Start);
+            col.append(&l);
+        }
+        if let Some(c) = caption {
+            let l = Label::new(Some(c));
+            l.add_css_class("ghost-pill-caption");
+            l.set_halign(Align::Start);
+            col.append(&l);
+        }
+        pill.append(&col);
+    }
+    pill
+}
+
+/// "Add networks" card: explains how to open the control panel from the
+/// time capsule, with a ghost mock-up of the capsule and the panel below it.
+fn build_add_network_card() -> Frame {
+    let (frame, inner) = section(
+        "Add networks",
+        "To connect to a new Wi-Fi network, open the control panel by clicking the \
+         status icons on the time capsule at the top of the screen, then choose \
+         Wifi to pick a network and enter its password.",
+    );
+
+    // numbered steps
+    let steps = [
+        "1.  Click the status icons on the time capsule.",
+        "2.  In the control panel, click the Wifi button.",
+        "3.  Select a network from the list and enter its password.",
+    ];
+    for s in steps {
+        let l = Label::new(Some(s));
+        l.add_css_class("row-caption");
+        l.set_halign(Align::Start);
+        l.set_xalign(0.0);
+        l.set_wrap(true);
+        inner.append(&l);
+    }
+
+    // ── ghost illustration ──
+    let ghost = GtkBox::new(Orientation::Vertical, 12);
+    ghost.add_css_class("ghost-box");
+    ghost.set_margin_top(8);
+    ghost.set_halign(Align::Fill);
+    ghost.set_can_target(false);
+    ghost.set_opacity(0.6);
+
+    // time capsule (top, centred)
+    let capsule = GtkBox::new(Orientation::Horizontal, 10);
+    capsule.add_css_class("ghost-capsule");
+    capsule.set_halign(Align::Center);
+
+    let cos_icon = Image::from_file("/var/lib/cynager/icons/cos.svg");
+    cos_icon.set_pixel_size(16);
+    cos_icon.set_margin_end(20);
+    capsule.append(&cos_icon);
+
+    let clock = Label::new(Some("10:09 PM"));
+    clock.add_css_class("ghost-clock");
+    capsule.append(&clock);
+
+    // status icons — these are the ones to click, so highlight them
+    let status = GtkBox::new(Orientation::Horizontal, 8);
+    status.add_css_class("ghost-highlight");
+    for icon in [
+        "network-wireless-symbolic",
+        "battery-full-symbolic",
+    ] {
+        let img = Image::from_icon_name(icon);
+        img.set_pixel_size(16);
+        status.append(&img);
+    }
+    capsule.append(&status);
+    ghost.append(&capsule);
+
+    // pointer hint between capsule and panel
+    let arrow = Label::new(Some("▼  click the status icons"));
+    arrow.add_css_class("ghost-hint");
+    arrow.set_halign(Align::Center);
+    ghost.append(&arrow);
+
+    // control panel row, wrapped so it stays inside the card
+    let panel = GtkBox::new(Orientation::Horizontal, 8);
+    panel.add_css_class("ghost-panel");
+    panel.set_halign(Align::Center);
+    panel.append(&ghost_pill(Some("avatar-default-symbolic"), Some("user"), None));
+    panel.append(&ghost_pill(Some("network-wireless-symbolic"), Some("Wifi"), Some("and Networks")));
+    panel.append(&ghost_pill(Some("airplane-mode-symbolic"), None, None));
+    panel.append(&ghost_pill(Some("audio-volume-high-symbolic"), Some("50%"), None));
+    ghost.append(&panel);
+
+    inner.append(&ghost);
+    frame
+}
+
 // ───────────────────────────── page ─────────────────────────────
 
 pub fn build_net_page() -> Overlay {
@@ -737,6 +857,9 @@ pub fn build_net_page() -> Overlay {
 
     // wifi card
     content.append(&build_wifi_card(&toast));
+
+    // add networks card
+    content.append(&build_add_network_card());
 
     let overlay = Overlay::new();
     let scroller: ScrolledWindow = page_scroller(&content);

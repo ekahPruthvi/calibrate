@@ -461,7 +461,7 @@ fn build_ghost_for_theme(light: bool) -> GtkBox {
         .spacing(0)
         .css_classes(["ghost-win", theme_class])
         .width_request(100)
-        .height_request(200)
+        .height_request(300)
         .overflow(gtk4::Overflow::Hidden)
         .build();
  
