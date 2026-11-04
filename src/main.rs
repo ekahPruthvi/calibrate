@@ -26,6 +26,7 @@ mod display;
 mod sound;
 mod network;
 mod bluetooth;
+mod storage;
 
 struct MenuItem {
     id: &'static str,
@@ -719,7 +720,7 @@ fn build_ui(app: &Application, initial_tab: Option<String>) {
     let blue_page = bluetooth::build_bt_page();
     stack.add_titled(&blue_page, Some("blue"), "Bluetooth");
 
-    let storage_page = build_placeholder_page("Storage", "Detailed storage settings are coming soon.");
+    let storage_page = storage::build_storage_page();
     stack.add_titled(&storage_page, Some("Storage"), "Storage");
 
     let battery_page = build_placeholder_page("Battery", "Battery settings are coming soon.");

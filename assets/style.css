@@ -93,9 +93,6 @@ window {
     color: #ffffff;
 }
 
-.sub-list row:first-child {
-}
-
 .sub-list row:last-child {
     background-image: none; /* no separator under the last row */
 }
@@ -525,9 +522,10 @@ calendar.view header stack.month {
     font-size: 16px;
 }
 
-calendar.view > grid > label.day-name {
-    font-weight: 600;
-    color: #464242;
+calendar.view > grid > label.day-number {
+    color: #2b2b2b;
+    background: transparent;
+    padding: 5px;
 }
 
 calendar.view > grid > label.day-name:hover {
@@ -577,6 +575,29 @@ calendar.view > grid > label:selected {
     background-clip: padding-box, border-box;
     border-radius: 100px;
 }
+
+progressbar.storage-bar trough {
+    min-height: 8px;
+    border-radius: 999px;
+    background: alpha(currentColor, 0.12);
+}
+progressbar.storage-bar progress {
+    min-height: 8px;
+    border-radius: 999px;
+    background: #4c9aff;
+}
+progressbar.storage-bar-warn progress { background: #f5a524; }
+progressbar.storage-bar-crit progress { background: #e5173f; }
+ 
+.storage-badge {
+    font-size: 10px;
+    font-weight: 600;
+    padding: 2px 10px;
+    border-radius: 999px;
+    background: alpha(currentColor, 0.12);
+}
+ 
+
 
 tooltip {
     all:unset;
