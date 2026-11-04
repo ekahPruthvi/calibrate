@@ -1102,11 +1102,8 @@ fn build_cleanup_card(toast: &Toast, on_done: Rc<dyn Fn()>) -> Frame {
                     Ok((freed, errs)) if errs.is_empty() => {
                         toast.show(&format!("Cleanup done — freed about {}", human(freed)))
                     }
-                    Ok((freed, errs)) => toast.show(&format!(
-                        "Freed about {} · {} failed ({})",
-                        human(freed),
-                        errs.len(),
-                        errs[0]
+                    Ok((_, _)) => toast.show(&format!(
+                        "Failed to remove Some Files"
                     )),
                     Err(_) => toast.show("Cleanup failed"),
                 }
