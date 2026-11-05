@@ -458,23 +458,14 @@ fn build_disks_card() -> (Frame, Rc<dyn Fn()>) {
     outer.set_margin_end(20);
 
     let header = GtkBox::new(Orientation::Horizontal, 12);
-    let text_box = GtkBox::new(Orientation::Vertical, 2);
-    text_box.set_hexpand(true);
-    let title = Label::new(Some("Disks"));
-    title.add_css_class("frame-title");
-    title.set_halign(Align::Start);
-    let sub = Label::new(Some("Every drive and partition with its space usage."));
-    sub.add_css_class("frame-subtitle");
-    sub.set_halign(Align::Start);
-    text_box.append(&title);
-    text_box.append(&sub);
 
     let refresh_btn = Button::with_label("Refresh");
     refresh_btn.add_css_class("sub-btn");
-    refresh_btn.set_valign(Align::Center);
+    refresh_btn.add_css_class("sub-btn-small");
+    refresh_btn.set_halign(Align::End);
+    refresh_btn.set_hexpand(true);
     refresh_btn.set_cursor_from_name(Some("pointer"));
 
-    header.append(&text_box);
     header.append(&refresh_btn);
 
     let body = GtkBox::new(Orientation::Vertical, 14);
@@ -1149,6 +1140,20 @@ pub fn build_storage_page() -> Overlay {
     let toast = Toast::new();
 
     // card 1 — disks
+    let disktithead = GtkBox::new(Orientation::Vertical, 2);
+    disktithead.set_hexpand(true);
+    disktithead.set_margin_top(20);
+    disktithead.set_margin_start(20);
+    let title = Label::new(Some("Disks"));
+    title.add_css_class("frame-title");
+    title.set_halign(Align::Start);
+    let sub = Label::new(Some("See mounted disks and available storage."));
+    sub.add_css_class("frame-subtitle");
+    sub.set_halign(Align::Start);
+    disktithead.append(&title);
+    disktithead.append(&sub);
+
+    content.append(&disktithead);
     let (disks_card, reload_disks) = build_disks_card();
     content.append(&disks_card);
 

@@ -560,9 +560,6 @@ pub fn build_appearance_page(window: &ApplicationWindow) -> ScrolledWindow {
 
     content.append(&card);
 
-    let wallframe = Frame::new(None);
-
-    let wallbox = GtkBox::new(Orientation::Vertical, 10);
     let walltitle = Label::new(Some("Wallpaper"));
     walltitle.add_css_class("frame-title");
     walltitle.set_margin_start(20);
@@ -570,9 +567,14 @@ pub fn build_appearance_page(window: &ApplicationWindow) -> ScrolledWindow {
     walltitle.set_margin_end(20);
     walltitle.set_halign(Align::Start);
 
+    let wallframe = Frame::new(None);
+
+    let wallbox = GtkBox::new(Orientation::Vertical, 10);
+
     let wallhead = GtkBox::new(Orientation::Horizontal, 5);
     wallhead.set_margin_start(20);
     wallhead.set_margin_end(20);
+    wallhead.set_margin_top(20);
     wallhead.set_hexpand(true);
 
     let mons = get_monitors();
@@ -838,28 +840,30 @@ pub fn build_appearance_page(window: &ApplicationWindow) -> ScrolledWindow {
     wallhead.append(&montab);
     wallhead.append(&addbtn);
 
-    wallbox.append(&walltitle);
     wallbox.append(&wallhead);
     wallbox.append(&monwalls);
     wallbox.append(&*gallery_holder.borrow());
 
     wallframe.set_child(Some(&wallbox));
 
-    let themeframe = Frame::new(None);
-
-    let themebox = GtkBox::new(Orientation::Vertical, 5);
     let themetitle = Label::new(Some("Theme Mode Toggle"));
     themetitle.add_css_class("frame-title");
-    themetitle.set_margin_start(20);
-    themetitle.set_margin_top(20);
-    themetitle.set_margin_end(10);
     themetitle.set_halign(Align::Start);
 
     let themesubtitle = Label::new(Some("Change the theme Dark/Light mode for GTK based applications."));
     themesubtitle.add_css_class("frame-subtitle");
-    themesubtitle.set_margin_start(20);
-    themesubtitle.set_margin_end(20);
     themesubtitle.set_halign(Align::Start);
+
+    let themetithead = GtkBox::new(Orientation::Vertical, 2);
+    themetithead.set_margin_top(20);
+    themetithead.set_margin_start(20);
+
+    themetithead.append(&themetitle);
+    themetithead.append(&themesubtitle);
+
+    let themeframe = Frame::new(None);
+
+    let themebox = GtkBox::new(Orientation::Vertical, 5);
 
     let themetogglecontainter = GtkBox::new(Orientation::Horizontal, 20);
     themetogglecontainter.set_margin_start(20);
@@ -925,37 +929,35 @@ pub fn build_appearance_page(window: &ApplicationWindow) -> ScrolledWindow {
     themetogglecontainter.append(&lightthemeghostbtn);
     themetogglecontainter.append(&darkthemeghostbtn);
     
-    themebox.append(&themetitle);
-    themebox.append(&themesubtitle);
     themebox.append(&themetogglecontainter);
 
     themeframe.set_child(Some(&themebox));
 
-    let cursorframe = Frame::new(None);
-
-    let cursorbox = GtkBox::new(Orientation::Vertical, 5);
     let cursortitle = Label::new(Some("Cursor"));
     cursortitle.add_css_class("frame-title");
-    cursortitle.set_margin_start(20);
-    cursortitle.set_margin_top(20);
-    cursortitle.set_margin_end(10);
     cursortitle.set_halign(Align::Start);
 
     let cursorsubtitle = Label::new(Some("Change the cursor theme and size for GTK based applications."));
     cursorsubtitle.add_css_class("frame-subtitle");
-    cursorsubtitle.set_margin_start(20);
-    cursorsubtitle.set_margin_end(20);
     cursorsubtitle.set_halign(Align::Start);
-    cursorsubtitle.set_margin_bottom(10);
 
-    cursorbox.append(&cursortitle);
-    cursorbox.append(&cursorsubtitle);
+    let cursortithead = GtkBox::new(Orientation::Vertical, 2);
+    cursortithead.set_margin_top(20);
+    cursortithead.set_margin_start(20);
 
+    cursortithead.append(&cursortitle);
+    cursortithead.append(&cursorsubtitle);
+
+    let cursorframe = Frame::new(None);
+
+    let cursorbox = GtkBox::new(Orientation::Vertical, 5);
+    
     let cursorrow = GtkBox::new(Orientation::Horizontal, 20);
     cursorrow.set_hexpand(true);
     cursorrow.set_margin_start(20);
     cursorrow.set_margin_end(20);
     cursorrow.set_margin_bottom(20);
+    cursorrow.set_margin_top(20);
 
     let cursor_themes = get_cursor_themes();
     let current_cursor_theme = get_current_cursor_theme();
@@ -1074,8 +1076,13 @@ pub fn build_appearance_page(window: &ApplicationWindow) -> ScrolledWindow {
 
     cursorframe.set_child(Some(&cursorbox));
 
+    content.append(&walltitle);
     content.append(&wallframe);
+
+    content.append(&themetithead);
     content.append(&themeframe);
+
+    content.append(&cursortithead);
     content.append(&cursorframe);
     page_scroller(&content)
 }

@@ -719,22 +719,6 @@ fn build_widgets_frame(toast: &Toast) -> Frame {
     let frame = Frame::new(None);
     let boxv = GtkBox::new(Orientation::Vertical, 10);
 
-    let title = Label::new(Some("Widgets"));
-    title.add_css_class("frame-title");
-    title.set_halign(Align::Start);
-    title.set_margin_start(20);
-    title.set_margin_top(20);
-    title.set_margin_end(20);
-
-    let subtitle = Label::new(Some("Widgets shown on the Capsule shell. Dimmed ones are turned off."));
-    subtitle.add_css_class("frame-subtitle");
-    subtitle.set_halign(Align::Start);
-    subtitle.set_margin_start(20);
-    subtitle.set_margin_end(20);
-
-    boxv.append(&title);
-    boxv.append(&subtitle);
-
     let states = read_widget_states();
     let on = |k: &str| states.get(k).copied().unwrap_or(false);
     let sticker_path = read_set_str("sticker").unwrap_or_default();
@@ -751,7 +735,7 @@ fn build_widgets_frame(toast: &Toast) -> Frame {
     flow.add_css_class("widget-grid");
     flow.set_valign(Align::Start);
     flow.set_hexpand(true);
-    flow.set_margin_top(10);
+    flow.set_margin_top(20);
     flow.set_margin_bottom(20);
     flow.set_margin_start(20);
     flow.set_margin_end(20);
@@ -913,22 +897,6 @@ fn build_ssd_frame(on_apps: impl Fn() + 'static) -> Frame {
     let frame = Frame::new(None);
     let boxv = GtkBox::new(Orientation::Vertical, 10);
 
-    let title = Label::new(Some("Server Side Decorations"));
-    title.add_css_class("frame-title");
-    title.set_halign(Align::Start);
-    title.set_margin_start(20);
-    title.set_margin_top(20);
-    title.set_margin_end(20);
-
-    let subtitle = Label::new(Some("Window Control Buttons (SSD) and window resize button disabled for the below applications.\nTo change them please goto the specific application page and change them"));
-    subtitle.add_css_class("frame-subtitle");
-    subtitle.set_halign(Align::Start);
-    subtitle.set_margin_start(20);
-    subtitle.set_margin_end(20);
-
-    boxv.append(&title);
-    boxv.append(&subtitle);
-
     // app icons with the name below; click -> Applications page
     let on_apps: Rc<dyn Fn()> = Rc::new(on_apps);
 
@@ -941,7 +909,7 @@ fn build_ssd_frame(on_apps: impl Fn() + 'static) -> Frame {
     flow.set_halign(Align::Start);
     flow.set_margin_start(20);
     flow.set_margin_end(20);
-    flow.set_margin_top(6);
+    flow.set_margin_top(20);
     flow.set_margin_bottom(20);
 
     let apps = read_nocsd_apps();
@@ -1046,29 +1014,33 @@ pub fn build_shell_page(
     helprow.append(&helpbtn);
     helpframe.set_child(Some(&helprow));
 
-    let outframe = Frame::new(None);
-
-    let outbox = GtkBox::new(Orientation::Vertical, 10);
 
     let outtitle = Label::new(Some("Main Shell Output"));
     outtitle.add_css_class("frame-title");
     outtitle.set_halign(Align::Start);
-    outtitle.set_margin_start(20);
-    outtitle.set_margin_top(20);
-    outtitle.set_margin_end(20);
 
     let outsubtitle = Label::new(Some("Choose your main display"));
     outsubtitle.add_css_class("frame-subtitle");
     outsubtitle.set_halign(Align::Start);
-    outsubtitle.set_margin_start(20);
-    outsubtitle.set_margin_end(20);
 
+    let outhead = GtkBox::new(Orientation::Vertical, 2);
+    outhead.set_margin_top(20);
+    outhead.set_margin_start(20);
+    outhead.append(&outtitle);
+    outhead.append(&outsubtitle);
+
+    content.append(&outhead);
+
+    let outframe = Frame::new(None);
+
+    let outbox = GtkBox::new(Orientation::Vertical, 10);
     let current = read_shellout().unwrap_or_else(|| "unknown".to_string());
 
     let monrow = GtkBox::new(Orientation::Horizontal, 10);
     monrow.set_margin_start(20);
     monrow.set_margin_end(20);
     monrow.set_margin_bottom(20);
+    monrow.set_margin_top(20);
     monrow.set_halign(Align::Start);
 
     let buttons: Rc<Vec<(String, Button)>> = Rc::new(
@@ -1102,14 +1074,46 @@ pub fn build_shell_page(
         });
     }
 
-    outbox.append(&outtitle);
-    outbox.append(&outsubtitle);
     outbox.append(&monrow);
 
     outframe.set_child(Some(&outbox));
 
     content.append(&outframe);
+
+    let sstitle = Label::new(Some("Server Side Decorations"));
+    sstitle.add_css_class("frame-title");
+    sstitle.set_halign(Align::Start);
+
+    let sssubtitle = Label::new(Some("Window Control Buttons (SSD) and window resize button disabled for the below applications.\nTo change them please goto the specific application page and change them"));
+    sssubtitle.add_css_class("frame-subtitle");
+    sssubtitle.set_halign(Align::Start);
+
+    let ssdhead = GtkBox::new(Orientation::Vertical, 2);
+    ssdhead.set_margin_top(20);
+    ssdhead.set_margin_start(20);
+
+    ssdhead.append(&sstitle);
+    ssdhead.append(&sssubtitle);
+
+    content.append(&ssdhead);
     content.append(&build_ssd_frame(on_apps));
+
+    let wititle = Label::new(Some("Widgets"));
+    wititle.add_css_class("frame-title");
+    wititle.set_halign(Align::Start);
+
+    let wisubtitle = Label::new(Some("Widgets shown on the Capsule shell. Dimmed ones are turned off."));
+    wisubtitle.add_css_class("frame-subtitle");
+    wisubtitle.set_halign(Align::Start);
+
+    let wihead = GtkBox::new(Orientation::Vertical, 2);
+    wihead.set_margin_top(20);
+    wihead.set_margin_start(20);
+
+    wihead.append(&wititle);
+    wihead.append(&wisubtitle); 
+    
+    content.append(&wihead);
     content.append(&build_widgets_frame(&toast));
     content.append(&helpframe);
 

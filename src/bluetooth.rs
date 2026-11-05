@@ -852,7 +852,7 @@ pub fn build_bt_page() -> Overlay {
     card.set_margin_top(10);
     card.set_hexpand(true);
 
-    let infoicon = Image::from_icon_name("bluetooth-symbolic");
+    let infoicon = Image::from_icon_name("network-bluetooth-activated");
     infoicon.set_pixel_size(54);
     infoicon.set_halign(Align::Center);
     infoicon.set_css_classes(&["card-icons"]);

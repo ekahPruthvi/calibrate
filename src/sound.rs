@@ -533,28 +533,10 @@ fn build_combined_card(toast: &Toast, on_applied: Rc<dyn Fn()>) -> Frame {
     let frame = Frame::new(None);
     let outer = GtkBox::new(Orientation::Vertical, 5);
 
-    let title = Label::new(Some("Combined Output"));
-    title.add_css_class("frame-title");
-    title.set_margin_start(20);
-    title.set_margin_top(20);
-    title.set_margin_end(20);
-    title.set_halign(Align::Start);
-
-    let sub = Label::new(Some(
-        "Tick two or more devices and press Apply to play through all of them at once. One device simply switches the output.",
-    ));
-    sub.add_css_class("frame-subtitle");
-    sub.set_margin_start(20);
-    sub.set_margin_end(20);
-    sub.set_margin_bottom(10);
-    sub.set_halign(Align::Start);
-    sub.set_xalign(0.0);
-    sub.set_wrap(true);
-
     let checks_box = GtkBox::new(Orientation::Vertical, 8);
     checks_box.set_margin_start(20);
     checks_box.set_margin_end(20);
-    checks_box.set_margin_top(5);
+    checks_box.set_margin_top(20);
     checks_box.set_margin_bottom(5);
 
     let checks: Rc<RefCell<Vec<(String, CheckButton)>>> = Rc::new(RefCell::new(Vec::new()));
@@ -636,8 +618,6 @@ fn build_combined_card(toast: &Toast, on_applied: Rc<dyn Fn()>) -> Frame {
         });
     }
 
-    outer.append(&title);
-    outer.append(&sub);
     outer.append(&checks_box);
     outer.append(&apply_btn);
     frame.set_child(Some(&outer));
@@ -682,11 +662,29 @@ pub fn build_sound_page() -> Overlay {
 
     let toast = Toast::new();
 
-    // Output tab: device card + combined output card
     let output_page = GtkBox::new(Orientation::Vertical, 16);
     let (output_card, refresh_output) = build_device_card(Kind::Output, &toast);
+    let title = Label::new(Some("Combined Output"));
+    title.add_css_class("frame-title");
+    title.set_halign(Align::Start);
+
+    let sub = Label::new(Some(
+        "Tick two or more devices and press Apply to play through all of them at once. One device simply switches the output.",
+    ));
+    sub.add_css_class("frame-subtitle");
+    sub.set_halign(Align::Start);
+    sub.set_xalign(0.0);
+    sub.set_wrap(true);
+
+    let output_tit = GtkBox::new(Orientation::Vertical, 2);
+    output_tit.set_margin_top(20);
+    output_tit.set_margin_start(20);
+    output_tit.append(&title);
+    output_tit.append(&sub);
+
     let combined_card = build_combined_card(&toast, refresh_output.clone());
     output_page.append(&output_card);
+    output_page.append(&output_tit);
     output_page.append(&combined_card);
 
     // Input tab

@@ -884,25 +884,28 @@ pub fn build_display_page(
 
     let toast = Toast::new();
 
-    // ── monitors frame (canvas) ──
-    let monframe = Frame::new(None);
-    let monbox = GtkBox::new(Orientation::Vertical, 10);
 
     let montitle = Label::new(Some("Monitors"));
     montitle.add_css_class("frame-title");
     montitle.set_halign(Align::Start);
-    montitle.set_margin_start(20);
-    montitle.set_margin_top(20);
-    montitle.set_margin_end(20);
 
     let monsub = Label::new(Some("Drag to arrange your displays, click one to change its settings."));
     monsub.add_css_class("frame-subtitle");
     monsub.set_halign(Align::Start);
-    monsub.set_margin_start(20);
-    monsub.set_margin_end(20);
 
-    monbox.append(&montitle);
-    monbox.append(&monsub);
+    let titlebox = GtkBox::new(Orientation::Vertical, 2);
+    titlebox.set_margin_top(20);
+    titlebox.set_margin_start(20);
+
+    titlebox.append(&montitle);
+    titlebox.append(&monsub);
+
+    content.append(&titlebox);
+
+    // ── monitors frame (canvas) ──
+    let monframe = Frame::new(None);
+    let monbox = GtkBox::new(Orientation::Vertical, 10);
+
     monframe.set_child(Some(&monbox));
     content.append(&monframe);
 
@@ -973,6 +976,7 @@ pub fn build_display_page(
             .margin_start(20)
             .margin_end(20)
             .margin_bottom(20)
+            .margin_top(20)
             .child(&canvas)
             .build();
         canvas_scroller.add_css_class("monitor-canvas");

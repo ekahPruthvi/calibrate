@@ -128,7 +128,7 @@ dependencies = [
 
 [[package]]
 name = "calibrate"
-version = "1.7.32"
+version = "1.7.34"
 dependencies = [
  "dbus",
  "gtk4",
