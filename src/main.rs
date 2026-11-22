@@ -12,7 +12,7 @@ use std::time::Duration;
 
 use self_update::cargo_crate_version;
 
-const APP_ID: &str = "ekah.scu.calibrate";
+const APP_ID: &str = "org.scu.calibrate";
 
 const TAB_IDS: &[&str] = &[
     "home", "appearance", "shellset", "display", "sound", "net", "blue", 

@@ -68,6 +68,32 @@ each page shud have a icon on top and small info abt tht page
     and trouble shoot for (relauncher) capsule, waul, altDot (tell the funtions of each of them below them like capsulke does ssd, drag and drop feature, battery and etc)
     graphical help doc pages for each feature in cynageos (pull from cynagectl)
 
+    - troubleshoot: (what -> restart button for ...)
+    
+        Notifications are stuck -> capsule
+        ctrl panel misbehaving -> capsule
+        can't click apps on desktop -> capsule
+        music widget stuck -> capsule
+        widget's missing -> capsule | check enabled widgets in settings
+        git widget not showing anything -> capsule | git widget settings
+        clippy stuck -> capsule
+
+        altDot not showing even after cosicon/winkey pressed -> altDot
+        
+        alt-tab not working -> altdock
+        snap to focus not working -> altdock
+        alt-tab is not cycling properly/not focusing apps -> altdock
+
+        drag to resize not showing ghost -> cos-ssd
+        no window controls -> cos-ssd
+        full-screen button not working -> cos-ssd
+
+        any bugs, UI glitches, or the above fixes not working please raise a github issue for the related project
+        OS UI (shell) - capsule github link
+        ... - ...
+        all componets
+
+
 -abt cynageos
     user
     username icon (chnage icon/set icon)
