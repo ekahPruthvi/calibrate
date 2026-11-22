@@ -115,10 +115,10 @@ fn read_partitions() -> Vec<PartitionInfo> {
     partitions
 }
 
-const MODULES: [&str; 6] = ["altDot", "capsule", "calibrate", "cynagectl", "octobacillus", "waul"];
+const MODULES: [&str; 6] = ["capsule", "cos-ssd", "altdock", "altDot", "calibrate", "cynagectl"];
 
-/// Runs `<name> -V` and returns the version, or "" if the program is missing,
-/// doesn't understand -V, or prints something that isn't "<name> <version>".
+const MODULE_ICON_DIR: &str = "/var/lib/cynager/icons/";
+
 fn module_version(name: &str) -> String {
     let Ok(mut child) = Command::new(name)
         .arg("-V")
@@ -410,7 +410,7 @@ fn build_versions_card() -> GtkBox {
                     .css_classes(["moduleCos"])
                     .build();
 
-                let icon = gtk4::Image::from_file(format!("/var/lib/cynager/icons/{}.png", module));
+                let icon = gtk4::Image::from_file(format!("{}/{}.svg", MODULE_ICON_DIR, module));
                 icon.set_pixel_size(100);
                 icon.set_halign(Align::Start);
 
